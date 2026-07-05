@@ -1,0 +1,14 @@
+<Window
+    x:Class="SonicRelay.Windows.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="SonicRelay Windows Publisher">
+  <Grid Padding="32">
+    <StackPanel Spacing="12" VerticalAlignment="Center">
+      <TextBlock Style="{StaticResource TitleTextBlockStyle}"
+                 Text="SonicRelay Windows Publisher" />
+      <TextBlock Text="Repository bootstrap complete. Audio streaming is not implemented yet."
+                 TextWrapping="Wrap" />
+    </StackPanel>
+  </Grid>
+</Window>

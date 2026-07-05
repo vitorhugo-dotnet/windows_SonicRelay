@@ -1,0 +1,33 @@
+# .NET and build output
+bin/
+obj/
+artifacts/
+TestResults/
+coverage/
+*.coverage
+*.trx
+
+# Visual Studio and Windows packaging
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+AppPackages/
+BundleArtifacts/
+Generated Files/
+Package.StoreAssociation.xml
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+*.cer
+
+# Rider and ReSharper
+.idea/
+_ReSharper*/
+*.DotSettings.user
+
+# OS files
+.DS_Store
+Thumbs.db

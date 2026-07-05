@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SonicRelay.Windows.ApiClient/SonicRelay.Windows.ApiClient.csproj" />
+    <Project Path="src/SonicRelay.Windows.App/SonicRelay.Windows.App.csproj" />
+    <Project Path="src/SonicRelay.Windows.Audio/SonicRelay.Windows.Audio.csproj" />
+    <Project Path="src/SonicRelay.Windows.Core/SonicRelay.Windows.Core.csproj" />
+    <Project Path="src/SonicRelay.Windows.Signaling/SonicRelay.Windows.Signaling.csproj" />
+    <Project Path="src/SonicRelay.Windows.WebRtc/SonicRelay.Windows.WebRtc.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SonicRelay.Windows.ApiClient.Tests/SonicRelay.Windows.ApiClient.Tests.csproj" />
+    <Project Path="tests/SonicRelay.Windows.Core.Tests/SonicRelay.Windows.Core.Tests.csproj" />
+  </Folder>
+</Solution>
