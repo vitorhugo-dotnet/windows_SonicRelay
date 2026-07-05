@@ -8,6 +8,7 @@
     <Project Path="src/SonicRelay.Windows.WebRtc/SonicRelay.Windows.WebRtc.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/SonicRelay.Windows.Audio.Tests/SonicRelay.Windows.Audio.Tests.csproj" />
     <Project Path="tests/SonicRelay.Windows.ApiClient.Tests/SonicRelay.Windows.ApiClient.Tests.csproj" />
     <Project Path="tests/SonicRelay.Windows.Core.Tests/SonicRelay.Windows.Core.Tests.csproj" />
     <Project Path="tests/SonicRelay.Windows.Signaling.Tests/SonicRelay.Windows.Signaling.Tests.csproj" />

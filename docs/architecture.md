@@ -12,16 +12,17 @@ flowchart TD
     CoreTests[SonicRelay.Windows.Core.Tests] --> Core
     ApiTests[SonicRelay.Windows.ApiClient.Tests] --> ApiClient
     SignalingTests[SonicRelay.Windows.Signaling.Tests] --> Signaling
+    AudioTests[SonicRelay.Windows.Audio.Tests] --> Audio
 ```
 
 - **App** is the WinUI 3 composition root and owns desktop lifecycle and presentation.
 - **Core** will hold application-independent domain state and rules.
 - **ApiClient** will implement typed backend HTTP communication.
 - **Signaling** manages authenticated outbound WebSocket signaling messages, validated envelopes, connection state, and conservative reconnect behavior. It does not transport audio.
-- **Audio** will own WASAPI loopback capture and audio-frame delivery.
+- **Audio** owns default-render-device WASAPI loopback capture, validated audio-frame delivery, activity metering, lifecycle state, and capture diagnostics.
 - **WebRtc** will own peer connections, negotiation, and Opus publication.
 
-Capability project references establish dependency direction: Signaling depends on Core for configuration and user-scoped tokens, while Audio and WebRtc remain isolated placeholders until their requirements are implemented.
+Capability project references establish dependency direction: Signaling depends on Core for configuration and user-scoped tokens, while Audio remains independently testable and WebRtc remains an isolated placeholder until its requirements are implemented.
 
 ## Planned runtime data flow
 
@@ -61,6 +62,5 @@ The canonical acceptance gate for future architecture and implementation work is
 - Backend URL configuration or production endpoints
 - Device registration or stream-session behavior
 - WebSocket connectivity
-- WASAPI capture
 - WebRTC, SDP, ICE, or Opus behavior
 - Installer and release packaging

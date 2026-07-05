@@ -4,7 +4,7 @@
 
 The Windows Publisher will turn Windows system audio into a low-latency SonicRelay stream. It will be the publisher-side desktop client; playback clients and backend services live outside this repository.
 
-The application shell, user-scoped configuration/token storage, and typed backend HTTP clients exist today. Signaling and media interactions below remain target architecture.
+The application shell, user-scoped configuration/token storage, typed backend HTTP clients, signaling client, and WASAPI loopback capture exist today. WebRTC media publication below remains target architecture.
 
 ## System context
 
@@ -60,6 +60,12 @@ sequenceDiagram
 The Windows client follows the backend's documented routes: `/auth/login`, `/auth/refresh`, `/auth/me`, `/api/devices/`, `/api/sessions/`, `/api/sessions/active`, and `/api/sessions/{sessionId}/end`. Device registration fixes the backend-required pair `windows_publisher`/`windows`. The backend base URL always comes from user configuration.
 
 These clients attach the stored opaque bearer token, refresh and retry once after an unauthorized response when possible, and map authorization, validation, conflict, network, backend, and unknown failures into typed errors. They carry control-plane JSON only; no audio or WebSocket signaling passes through this layer.
+
+## WASAPI loopback capture
+
+The Audio capability opens the default Windows render endpoint in WASAPI shared loopback mode. This is a user-mode Core Audio API: it installs no driver, starts no service, changes no global device setting, and requires no administrator privilege. The Audio page can start, pause, resume, and stop capture while displaying the selected endpoint, native mix format, live peak activity, captured frame/byte counters, state, and the last mapped error.
+
+Frames use the endpoint's native shared-mode mix format, currently IEEE float 32-bit or PCM 16-bit. Loopback normally yields silence when no application is playing audio. Capture follows the default endpoint selected at start; removing or invalidating that endpoint faults the capture cleanly, after which the user can stop and restart against the current default device. Windows may exclude protected content. This layer does not resample, encode Opus, create WebRTC peers, or transmit audio.
 
 ## Non-admin requirement
 
