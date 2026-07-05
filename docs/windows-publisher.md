@@ -75,6 +75,12 @@ Distribution should be unpackaged and self-contained, per-user, or portable wher
 
 Dependencies that require elevation for normal usage are incompatible and must be rejected. Future implementation and release work must be reviewed against the [non-admin checklist](non-admin-checklist.md).
 
+## Diagnostics and safe sharing
+
+The Diagnostics page shows the current backend, authentication, device, session, signaling, audio capture, and WebRTC status. Structured JSON Lines logs are stored per user in `%LocalAppData%\SonicRelay\WindowsPublisher\logs`; exported Markdown reports are stored in the adjacent `diagnostics` folder. Neither operation requires elevation or writes to Windows Event Log.
+
+Exported diagnostic reports are designed to be safe to attach to a support request: identifiers are masked, backend URLs contain only scheme/host/port, and credentials, tokens, passwords, email addresses, SDP bodies, and ICE candidates are redacted. Do not share `tokens.dat`, `appsettings.json`, raw signaling captures, memory dumps, or any manually collected SDP/ICE payload even when sharing an exported report.
+
 ## Current deliverable
 
 The bootstrap provides a WinUI 3 application, capability-oriented class libraries, focused test projects, shared build settings, and documentation. It deliberately contains no simulated endpoints or placeholder production behavior.
