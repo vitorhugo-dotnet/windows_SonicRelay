@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/SonicRelay.Windows.ApiClient/SonicRelay.Windows.ApiClient.csproj" />
+    <ProjectReference Include="../../src/SonicRelay.Windows.Core/SonicRelay.Windows.Core.csproj" />
   </ItemGroup>
 
 </Project>

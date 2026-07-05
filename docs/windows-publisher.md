@@ -4,7 +4,7 @@
 
 The Windows Publisher will turn Windows system audio into a low-latency SonicRelay stream. It will be the publisher-side desktop client; playback clients and backend services live outside this repository.
 
-Only the application shell and project boundaries exist today. Every runtime interaction below is a target architecture, not current behavior.
+The application shell, user-scoped configuration/token storage, and typed backend HTTP clients exist today. Signaling and media interactions below remain target architecture.
 
 ## System context
 
@@ -54,6 +54,12 @@ sequenceDiagram
 - Viewer isolation requires a separate peer connection for every viewer.
 - Audio capture and network work must not block the UI thread.
 - Secrets and access tokens must not be written to logs.
+
+## Implemented HTTP surface
+
+The Windows client follows the backend's documented routes: `/auth/login`, `/auth/refresh`, `/auth/me`, `/api/devices/`, `/api/sessions/`, `/api/sessions/active`, and `/api/sessions/{sessionId}/end`. Device registration fixes the backend-required pair `windows_publisher`/`windows`. The backend base URL always comes from user configuration.
+
+These clients attach the stored opaque bearer token, refresh and retry once after an unauthorized response when possible, and map authorization, validation, conflict, network, backend, and unknown failures into typed errors. They carry control-plane JSON only; no audio or WebSocket signaling passes through this layer.
 
 ## Non-admin requirement
 

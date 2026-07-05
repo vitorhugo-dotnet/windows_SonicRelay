@@ -8,7 +8,7 @@ Installing, configuring, and running the Windows Publisher must not require admi
 
 ## Current status
 
-This repository currently contains the .NET 10 and WinUI 3 foundation only. Authentication, device registration, stream sessions, WebSocket signaling, WASAPI loopback capture, and WebRTC/Opus publishing are planned but are not implemented.
+This repository contains the .NET 10 and WinUI 3 foundation plus the typed backend HTTP client layer. WebSocket signaling, WASAPI loopback capture, and WebRTC/Opus publishing remain planned.
 
 ## Prerequisites
 
@@ -38,6 +38,12 @@ The app is an unpackaged WinUI 3 executable. Select `SonicRelay.Windows.App` as 
 On first launch, the publisher creates editable configuration at `%LOCALAPPDATA%\SonicRelay\WindowsPublisher\appsettings.json`. Backend and signaling addresses must be absolute HTTP(S) or WebSocket URLs, and `defaultMaxViewers` must be greater than zero.
 
 Authentication tokens are stored for the current user at `%LOCALAPPDATA%\SonicRelay\WindowsPublisher\tokens.dat` and protected with Windows DPAPI `CurrentUser`. If DPAPI is unavailable, token operations return a secure-storage error and no plaintext fallback is written. Neither configuration nor token storage requires administrator privileges.
+
+## Backend HTTP client
+
+The configured `backendBaseUrl` is used as the `HttpClient.BaseAddress`; no production address is compiled into the application. The typed clients implement login and refresh under `/auth`, current-user lookup, `windows_publisher` device registration/listing, and stream-session creation/active-list/end operations.
+
+Authenticated requests load the current user's DPAPI-protected bearer token. A `401` with an available refresh token causes one refresh request and one retry, and the replacement tokens are saved back to the user-scoped store. HTTP, network, and backend failures are exposed as typed API errors. This layer uses outbound HTTP(S) only and requires no administrator privileges.
 
 ## Planned milestones
 
