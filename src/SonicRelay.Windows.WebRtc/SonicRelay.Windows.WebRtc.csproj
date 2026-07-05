@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="../SonicRelay.Windows.Signaling/SonicRelay.Windows.Signaling.csproj" />
+  </ItemGroup>
+
 </Project>

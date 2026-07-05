@@ -12,5 +12,6 @@
     <Project Path="tests/SonicRelay.Windows.ApiClient.Tests/SonicRelay.Windows.ApiClient.Tests.csproj" />
     <Project Path="tests/SonicRelay.Windows.Core.Tests/SonicRelay.Windows.Core.Tests.csproj" />
     <Project Path="tests/SonicRelay.Windows.Signaling.Tests/SonicRelay.Windows.Signaling.Tests.csproj" />
+    <Project Path="tests/SonicRelay.Windows.WebRtc.Tests/SonicRelay.Windows.WebRtc.Tests.csproj" />
   </Folder>
 </Solution>
