@@ -14,7 +14,7 @@
         <TextBlock FontWeight="SemiBold" Text="SonicRelay Publisher" />
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
           <FontIcon FontSize="10" Glyph="&#xE946;" />
-          <TextBlock Style="{StaticResource MockStatusTextStyle}" Text="Mock state · Services not connected" />
+          <TextBlock x:Name="GlobalStatusText" Style="{StaticResource MockStatusTextStyle}" Text="Backend not configured" />
         </StackPanel>
       </Grid>
     </Border>
@@ -32,7 +32,7 @@
       <Frame x:Name="ContentFrame" />
     </NavigationView>
     <Border x:Name="LogPanel" Grid.Row="2" Padding="16,10" Background="{ThemeResource CardBackgroundBrush}">
-      <TextBlock Style="{StaticResource MockStatusTextStyle}" Text="Activity log · No events yet (placeholder)" />
+      <TextBlock x:Name="LatestLogText" Style="{StaticResource MockStatusTextStyle}" Text="Activity log · No events yet" TextTrimming="CharacterEllipsis" />
     </Border>
   </Grid>
 </Window>

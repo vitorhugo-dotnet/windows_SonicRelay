@@ -1,15 +1,10 @@
 <Page x:Class="SonicRelay.Windows.App.Pages.DashboardPage" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <ScrollViewer><StackPanel Padding="24" Spacing="16">
-    <TextBlock FontSize="{StaticResource TitleFontSize}" FontWeight="SemiBold" Text="Dashboard" />
-    <TextBlock Style="{StaticResource MockStatusTextStyle}" Text="Mock state · Live services are not configured" />
-    <ItemsControl><ItemsControl.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid MaximumRowsOrColumns="3" Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-      <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Authentication"/><TextBlock Text="Not signed in (placeholder)"/></StackPanel></Border>
-      <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Backend"/><TextBlock Text="Not connected (placeholder)"/></StackPanel></Border>
-      <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Current device"/><TextBlock Text="No device selected"/></StackPanel></Border>
-      <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Session code"/><TextBlock Text="Not generated"/></StackPanel></Border>
-      <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Viewer count"/><TextBlock Text="Unavailable"/></StackPanel></Border>
-      <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Audio capture"/><TextBlock Text="Not started"/></StackPanel></Border>
-      <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Signaling"/><TextBlock Text="Not connected (placeholder)"/></StackPanel></Border>
-    </ItemsControl>
-  </StackPanel></ScrollViewer>
+  <ScrollViewer><StackPanel Padding="24" Spacing="16"><TextBlock FontSize="{StaticResource TitleFontSize}" FontWeight="SemiBold" Text="Dashboard"/><ItemsControl><ItemsControl.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid MaximumRowsOrColumns="3" Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+    <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Authentication"/><TextBlock x:Name="AuthText" Text="Not signed in"/></StackPanel></Border>
+    <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Current device"/><TextBlock x:Name="DeviceText" Text="No device"/></StackPanel></Border>
+    <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Session code"/><TextBlock x:Name="SessionText" FontSize="24" FontWeight="Bold" Text="—"/></StackPanel></Border>
+    <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Viewer count"/><TextBlock x:Name="ViewerText" Text="0"/></StackPanel></Border>
+    <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Audio capture"/><TextBlock x:Name="AudioText" Text="Stopped"/></StackPanel></Border>
+    <Border Style="{StaticResource DashboardCardStyle}" Width="240" Margin="0,0,12,12"><StackPanel Spacing="8"><TextBlock FontWeight="SemiBold" Text="Signaling"/><TextBlock x:Name="SignalingText" Text="Disconnected"/></StackPanel></Border>
+  </ItemsControl></StackPanel></ScrollViewer>
 </Page>

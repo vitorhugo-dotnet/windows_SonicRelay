@@ -6,6 +6,7 @@
     <Project Path="src/SonicRelay.Windows.Core/SonicRelay.Windows.Core.csproj" />
     <Project Path="src/SonicRelay.Windows.Signaling/SonicRelay.Windows.Signaling.csproj" />
     <Project Path="src/SonicRelay.Windows.WebRtc/SonicRelay.Windows.WebRtc.csproj" />
+    <Project Path="src/SonicRelay.Windows.Presentation/SonicRelay.Windows.Presentation.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SonicRelay.Windows.Audio.Tests/SonicRelay.Windows.Audio.Tests.csproj" />
@@ -13,5 +14,6 @@
     <Project Path="tests/SonicRelay.Windows.Core.Tests/SonicRelay.Windows.Core.Tests.csproj" />
     <Project Path="tests/SonicRelay.Windows.Signaling.Tests/SonicRelay.Windows.Signaling.Tests.csproj" />
     <Project Path="tests/SonicRelay.Windows.WebRtc.Tests/SonicRelay.Windows.WebRtc.Tests.csproj" />
+    <Project Path="tests/SonicRelay.Windows.Presentation.Tests/SonicRelay.Windows.Presentation.Tests.csproj" />
   </Folder>
 </Solution>
