@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using SonicRelay.Windows.Core.Configuration;
 
 namespace SonicRelay.Windows.App;
 
@@ -13,6 +14,7 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        _ = new UserConfigurationLoader().LoadAsync().GetAwaiter().GetResult();
         _window = new MainWindow();
         _window.Activate();
     }
