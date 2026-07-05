@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-test-and-release:
+    name: Build, test, and release
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies
+        run: dotnet restore SonicRelay.Windows.slnx
+
+      - name: Build solution
+        run: dotnet build SonicRelay.Windows.slnx --configuration Release --no-restore
+
+      - name: Run repository structure tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/Repository.Structure.Tests.ps1
+
+      - name: Run .NET tests
+        run: >-
+          dotnet test SonicRelay.Windows.slnx --configuration Release --no-build --no-restore
+          --logger "trx;LogFilePrefix=sonicrelay-release"
+          --results-directory TestResults
+
+      - name: Resolve release version
+        id: release
+        shell: pwsh
+        run: |
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $tag = '${{ github.ref_name }}'
+            $version = $tag.TrimStart('v')
+            $verifyTag = 'true'
+          } else {
+            $tag = 'v0.0.0-manual.${{ github.run_number }}'
+            $version = '0.0.0-manual.${{ github.run_number }}'
+            $verifyTag = 'false'
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "verify-tag=$verifyTag" >> $env:GITHUB_OUTPUT
+
+      - name: Publish portable Windows x64 app
+        run: >-
+          dotnet publish src/SonicRelay.Windows.App/SonicRelay.Windows.App.csproj
+          --configuration Release --runtime win-x64 --self-contained true --no-restore
+          --output artifacts/publish/win-x64
+
+      - name: Create portable archive
+        id: archive
+        shell: pwsh
+        run: |
+          $version = '${{ steps.release.outputs.version }}'
+          $publishDirectory = Join-Path $PWD 'artifacts/publish/win-x64'
+          $archivePath = Join-Path $PWD "artifacts/SonicRelay.WindowsPublisher-win-x64-$version.zip"
+
+          @(
+            "Version: $version"
+            "Commit: ${{ github.sha }}"
+            'Runtime: win-x64'
+          ) | Set-Content -LiteralPath (Join-Path $publishDirectory 'BUILD-INFO.txt')
+
+          Compress-Archive -Path "$publishDirectory/*" -DestinationPath $archivePath -CompressionLevel Optimal
+          "path=$archivePath" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub Release for tag
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ steps.release.outputs.tag }}' '${{ steps.archive.outputs.path }}' `
+            --title 'SonicRelay Windows Publisher ${{ steps.release.outputs.tag }}' `
+            --generate-notes `
+            --verify-tag `
+            --notes "Build version: ${{ steps.release.outputs.version }}`nCommit: ${{ github.sha }}`nRuntime: win-x64"
+
+      - name: Create GitHub Release for manual run
+        if: github.ref_type != 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ steps.release.outputs.tag }}' '${{ steps.archive.outputs.path }}' `
+            --target '${{ github.sha }}' `
+            --title 'SonicRelay Windows Publisher ${{ steps.release.outputs.tag }}' `
+            --generate-notes `
+            --notes "Build version: ${{ steps.release.outputs.version }}`nCommit: ${{ github.sha }}`nRuntime: win-x64"

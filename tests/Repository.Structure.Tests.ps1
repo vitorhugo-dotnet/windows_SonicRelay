@@ -8,6 +8,7 @@ $requiredPaths = @(
     '.editorconfig'
     '.gitignore'
     '.github/workflows/ci.yml'
+    '.github/workflows/release.yml'
     'src/SonicRelay.Windows.App/SonicRelay.Windows.App.csproj'
     'src/SonicRelay.Windows.Core/SonicRelay.Windows.Core.csproj'
     'src/SonicRelay.Windows.ApiClient/SonicRelay.Windows.ApiClient.csproj'
@@ -84,6 +85,35 @@ if (Test-Path -LiteralPath $workflowPath) {
 
     if ($missingWorkflowRequirements.Count -gt 0) {
         Write-Error "Missing CI workflow requirements:`n$($missingWorkflowRequirements -join "`n")"
+    }
+}
+
+$releaseWorkflowPath = Join-Path $root '.github/workflows/release.yml'
+if (Test-Path -LiteralPath $releaseWorkflowPath) {
+    $releaseWorkflow = Get-Content -Raw -LiteralPath $releaseWorkflowPath
+    $requiredReleaseWorkflowPatterns = [ordered]@{
+        'version tag trigger' = '(?m)^\s*-\s*.+v\*.+\s*$'
+        'manual trigger' = '(?m)^\s*workflow_dispatch:\s*$'
+        'Windows runner' = 'runs-on:\s*windows-latest'
+        'release write permission' = '(?ms)permissions:.*?contents:\s*write'
+        'dependency restore' = 'dotnet restore SonicRelay\.Windows\.slnx'
+        'Release build' = 'dotnet build SonicRelay\.Windows\.slnx --configuration Release --no-restore'
+        'repository structure test' = 'tests/Repository\.Structure\.Tests\.ps1'
+        'solution tests' = 'dotnet test SonicRelay\.Windows\.slnx --configuration Release --no-build --no-restore'
+        'Windows x64 publish' = '(?s)dotnet publish src/SonicRelay\.Windows\.App/SonicRelay\.Windows\.App\.csproj.*?--runtime win-x64'
+        'self-contained publish' = '--self-contained true'
+        'portable archive name' = 'SonicRelay\.WindowsPublisher-win-x64-\$version\.zip'
+        'build metadata' = 'BUILD-INFO\.txt'
+        'release creation' = 'gh release create'
+        'generated release notes' = '--generate-notes'
+    }
+
+    $missingReleaseWorkflowRequirements = $requiredReleaseWorkflowPatterns.GetEnumerator() | Where-Object {
+        $releaseWorkflow -notmatch $_.Value
+    } | ForEach-Object { $_.Key }
+
+    if ($missingReleaseWorkflowRequirements.Count -gt 0) {
+        Write-Error "Missing release workflow requirements:`n$($missingReleaseWorkflowRequirements -join "`n")"
     }
 }
 

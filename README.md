@@ -40,6 +40,14 @@ Normal CI requires no repository secrets and does not publish or deploy artifact
 
 The app is an unpackaged WinUI 3 executable. Select `SonicRelay.Windows.App` as the startup project when launching it from an IDE.
 
+## Download a portable release
+
+Open the repository's [Releases page](https://github.com/vitorhugo-java/windows_SonicRelay/releases), download `SonicRelay.WindowsPublisher-win-x64-<version>.zip`, and extract it to a user-writable folder such as one under your profile. Run `SonicRelay.Windows.App.exe` directly from the extracted folder. Do not run it as administrator.
+
+Pushing a tag matching `v*` (for example, `v0.1.0`) builds, tests, and publishes a release for that tag. The release workflow can also be run manually and creates a versioned development release from the selected commit. Each ZIP is self-contained for Windows x64 and includes `BUILD-INFO.txt` with its version, commit SHA, and runtime target.
+
+There is currently no MSIX or installer. The portable ZIP is the supported distribution format so normal use remains per-user and does not require elevation or a machine-wide installation.
+
 ## User configuration and tokens
 
 On first launch, the publisher creates editable configuration at `%LOCALAPPDATA%\SonicRelay\WindowsPublisher\appsettings.json`. Backend and signaling addresses must be absolute HTTP(S) or WebSocket URLs, and `defaultMaxViewers` must be greater than zero.
