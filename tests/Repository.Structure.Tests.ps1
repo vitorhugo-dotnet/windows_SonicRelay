@@ -96,6 +96,9 @@ if (Test-Path -LiteralPath $releaseSmokeTestPath) {
     }
 }
 
+$solutionReferencePattern = '(SonicRelay\.Windows\.slnx|\$env:SOLUTION_PATH)'
+$releaseConfigurationPattern = '(Release|\$env:CONFIGURATION)'
+
 $workflowPath = Join-Path $root '.github/workflows/ci.yml'
 if (Test-Path -LiteralPath $workflowPath) {
     $workflow = Get-Content -Raw -LiteralPath $workflowPath
@@ -106,9 +109,9 @@ if (Test-Path -LiteralPath $workflowPath) {
         'Windows runner' = 'runs-on:\s*windows-latest'
         '.NET setup' = 'actions/setup-dotnet@v4'
         'global.json SDK selection' = 'global-json-file:\s*global\.json'
-        'dependency restore' = 'dotnet restore SonicRelay\.Windows\.slnx'
-        'Release build' = 'dotnet build SonicRelay\.Windows\.slnx --configuration Release --no-restore'
-        'solution tests' = 'dotnet test SonicRelay\.Windows\.slnx --configuration Release --no-build --no-restore'
+        'dependency restore' = "dotnet restore $solutionReferencePattern"
+        'Release build' = "dotnet build $solutionReferencePattern --configuration $releaseConfigurationPattern --no-restore"
+        'solution tests' = "dotnet test $solutionReferencePattern --configuration $releaseConfigurationPattern --no-build --no-restore"
         'TRX results' = '--logger "trx;LogFilePrefix=sonicrelay"'
         'repository structure test' = 'tests/Repository\.Structure\.Tests\.ps1'
         'artifact upload' = 'actions/upload-artifact@v4'
