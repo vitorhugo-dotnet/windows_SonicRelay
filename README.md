@@ -34,21 +34,30 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests/Repository.Structure.T
 
 ## Continuous integration
 
-GitHub Actions runs CI for every pull request and every push to `main` on a Windows runner. The workflow uses the SDK selected by `global.json`, restores dependencies, builds the complete solution in Release configuration, runs all solution tests plus the repository structure test, and uploads available TRX test results as the `test-results` artifact.
+GitHub Actions runs CI for every pull request, every push to `main`, every `v*` tag, and manual workflow dispatches. The workflow uses the SDK selected by `global.json`, restores dependencies, builds the complete solution in Release configuration, runs the repository structure test, runs all solution tests, and uploads available TRX test results as the `test-results` artifact.
 
-Normal CI requires no repository secrets and does not publish or deploy artifacts. It only validates the existing non-admin application runtime requirements; it introduces no runtime dependency or elevation requirement for users.
+After build and tests pass on non-PR runs, the workflow publishes Windows x64 release assets:
+
+- `SonicRelay.WindowsPublisher-win-x64-<version>.zip`: portable folder distribution.
+- `SonicRelay.WindowsPublisher-win-x64-<version>.exe`: portable single-file executable.
+- `SonicRelay.WindowsPublisher-win-x64-<version>.msi`: per-user MSI installer under the current user's LocalAppData path.
+- `checksums-sha256.txt`: SHA-256 checksums for the release packages.
+
+Package artifacts are uploaded back to the workflow run. Pushing a tag matching `v*` (for example, `v0.1.0`) or running the workflow manually also publishes those assets to GitHub Releases. Manual runs without a version create a prerelease tag named `dev-<run-number>`.
+
+The package flow keeps the app unpackaged and per-user. It does not introduce services, drivers, firewall changes, machine-wide writes, or an administrator requirement for normal usage. The generated packages are currently unsigned.
 
 The app is an unpackaged WinUI 3 executable. Select `SonicRelay.Windows.App` as the startup project when launching it from an IDE.
 
-## Download a portable release
+## Download a release
 
-Open the repository's [Releases page](https://github.com/vitorhugo-java/windows_SonicRelay/releases), download `SonicRelay.WindowsPublisher-win-x64-<version>.zip`, and extract it to a user-writable folder such as one under your profile. Run `SonicRelay.Windows.App.exe` directly from the extracted folder. Do not run it as administrator.
+Open the repository's [Releases page](https://github.com/vitorhugo-java/windows_SonicRelay/releases) and download the asset that matches how you want to run it:
+
+- ZIP: extract it to a user-writable folder such as one under your profile and run `SonicRelay.Windows.App.exe` directly. Do not run it as administrator.
+- EXE: run the portable single-file executable directly as the current user.
+- MSI: install it as the current user. It should not require administrator privileges.
 
 Before approving a release, run the [non-admin release smoke test](docs/release-smoke-test.md) from a clean standard-user environment. Every mandatory item is a release gate.
-
-Pushing a tag matching `v*` (for example, `v0.1.0`) builds, tests, and publishes a release for that tag. The release workflow can also be run manually and creates a versioned development release from the selected commit. Each ZIP is self-contained for Windows x64 and includes `BUILD-INFO.txt` with its version, commit SHA, and runtime target.
-
-There is currently no MSIX or installer. The portable ZIP is the supported distribution format so normal use remains per-user and does not require elevation or a machine-wide installation.
 
 ## User configuration and tokens
 
