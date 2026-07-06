@@ -41,7 +41,9 @@ public sealed class PublisherRuntime : IAsyncDisposable
             throw new ConfigurationValidationException("Backend URL must be an absolute HTTP or HTTPS URL.");
 
         var normalized = backendBaseUrl.AbsoluteUri.EndsWith('/') ? backendBaseUrl : new Uri(backendBaseUrl.AbsoluteUri + "/");
-        var signalingUrl = new Uri(normalized, "signaling");
+        // The backend hosts the signaling WebSocket at /ws/signaling; deriving it from the backend base
+        // keeps a single configured address while matching the server route (a bare /signaling returns 404).
+        var signalingUrl = new Uri(normalized, "ws/signaling");
         var configuration = new PublisherConfiguration(normalized, signalingUrl, 4);
         configuration.Validate();
         var tokenStore = new UserScopedTokenStore();
