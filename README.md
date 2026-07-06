@@ -40,7 +40,7 @@ After build and tests pass on non-PR runs, the workflow publishes Windows x64 re
 
 - `SonicRelay.WindowsPublisher-win-x64-<version>.zip`: portable folder distribution.
 - `SonicRelay.WindowsPublisher-win-x64-<version>.exe`: portable single-file executable.
-- `SonicRelay.WindowsPublisher-win-x64-<version>.msi`: per-user MSI installer under the current user's LocalAppData path.
+- `SonicRelay.WindowsPublisher-win-x64-<version>.msi`: per-user MSI installer under the current user's LocalAppData path, with a Start Menu shortcut for launching the app.
 - `checksums-sha256.txt`: SHA-256 checksums for the release packages.
 
 Package artifacts are uploaded back to the workflow run. Pushing a tag matching `v*` (for example, `v0.1.0`) or running the workflow manually also publishes those assets to GitHub Releases. Manual runs without a version create a prerelease tag named `dev-<run-number>`.
@@ -55,7 +55,7 @@ Open the repository's [Releases page](https://github.com/vitorhugo-java/windows_
 
 - ZIP: extract it to a user-writable folder such as one under your profile and run `SonicRelay.Windows.App.exe` directly. Do not run it as administrator.
 - EXE: run the portable single-file executable directly as the current user.
-- MSI: install it as the current user. It should not require administrator privileges.
+- MSI: install it as the current user, then launch `SonicRelay Windows Publisher` from the Start Menu. The installed files live under `%LOCALAPPDATA%\SonicRelay\WindowsPublisher`.
 
 Before approving a release, run the [non-admin release smoke test](docs/release-smoke-test.md) from a clean standard-user environment. Every mandatory item is a release gate.
 
