@@ -203,10 +203,12 @@ jobs:
             -d PublishDir=$portableDir `
             -o $msiPath
 
-          Get-ChildItem -Path $distDir -File -Include *.zip,*.exe,*.msi | ForEach-Object {
-            $hash = Get-FileHash -Path $_.FullName -Algorithm SHA256
-            "$($hash.Hash)  $($_.Name)"
-          } | Set-Content -Path (Join-Path $distDir 'checksums-sha256.txt') -Encoding ASCII
+          Get-ChildItem -Path $distDir -File |
+            Where-Object { $_.Extension -in @('.zip', '.exe', '.msi') } |
+            ForEach-Object {
+              $hash = Get-FileHash -Path $_.FullName -Algorithm SHA256
+              "$($hash.Hash)  $($_.Name)"
+            } | Set-Content -Path (Join-Path $distDir 'checksums-sha256.txt') -Encoding ASCII
 
           @"
           # SonicRelay Windows Publisher ${{ steps.metadata.outputs.display_version }}
@@ -241,7 +243,9 @@ jobs:
           $tagName = '${{ steps.metadata.outputs.tag_name }}'
           $releaseTitle = 'SonicRelay Windows Publisher ${{ steps.metadata.outputs.display_version }}'
           $notesPath = Join-Path $env:GITHUB_WORKSPACE 'artifacts/release/RELEASE-NOTES.md'
-          $assetPaths = Get-ChildItem -Path 'artifacts/release' -File -Include *.zip,*.exe,*.msi,*.txt | Select-Object -ExpandProperty FullName
+          $assetPaths = Get-ChildItem -Path 'artifacts/release' -File |
+            Where-Object { $_.Extension -in @('.zip', '.exe', '.msi', '.txt') } |
+            Select-Object -ExpandProperty FullName
 
           $args = @('release', 'create', $tagName)
           $args += $assetPaths
