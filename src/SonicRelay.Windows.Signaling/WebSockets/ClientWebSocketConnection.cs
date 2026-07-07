@@ -14,6 +14,16 @@ internal sealed class ClientWebSocketConnection : IWebSocketConnection
 {
     private readonly ClientWebSocket socket = new();
 
+    public ClientWebSocketConnection()
+    {
+        // Protocol-level keepalive: send Pings every 20 s and abort the socket if
+        // no Pong arrives within 10 s. A silently dropped connection then surfaces
+        // as a WebSocketException from ReceiveAsync, feeding the reconnect path
+        // instead of leaving the UI stuck on "Connected".
+        socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+        socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(10);
+    }
+
     public WebSocketState State => socket.State;
 
     public Task ConnectAsync(Uri uri, string accessToken, CancellationToken cancellationToken)

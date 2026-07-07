@@ -22,6 +22,7 @@ public sealed record PublisherSnapshot
     public bool CanCreateSession => IsAuthenticated && DeviceId.HasValue && SessionId is null && !IsBusy;
     public bool CanStartAudio => SessionId.HasValue && SignalingState == SignalingConnectionState.Connected
         && AudioState is AudioCaptureState.Stopped or AudioCaptureState.Faulted && !IsBusy;
-    public bool CanStopAudio => AudioState is AudioCaptureState.Capturing or AudioCaptureState.Paused or AudioCaptureState.Faulted;
+    public bool CanStopAudio => AudioState is AudioCaptureState.Capturing or AudioCaptureState.Paused
+        or AudioCaptureState.Recovering or AudioCaptureState.Faulted;
     public bool CanEndSession => SessionId.HasValue && !IsBusy;
 }

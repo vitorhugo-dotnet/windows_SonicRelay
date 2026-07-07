@@ -20,7 +20,10 @@ public sealed partial class AudioPage : Page
     private void Render(PublisherSnapshot? state)
     {
         var diagnostics = state?.AudioDiagnostics;
-        StateText.Text = (state?.AudioState ?? AudioCaptureState.Stopped).ToString();
+        var audioState = state?.AudioState ?? AudioCaptureState.Stopped;
+        StateText.Text = audioState == AudioCaptureState.Recovering
+            ? "Reconnecting audio…"
+            : audioState.ToString();
         DeviceText.Text = diagnostics?.Device?.Name ?? "—";
         FormatText.Text = diagnostics?.Device is { } device ? $"{device.SampleRate:N0} Hz / {device.ChannelCount} channels / {device.Format}" : "—";
         LevelMeter.Value = (diagnostics?.Level.Peak ?? 0) * 100;
