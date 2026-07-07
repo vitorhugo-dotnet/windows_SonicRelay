@@ -89,6 +89,111 @@ public sealed class AudioCaptureServiceTests
         Assert.Equal(AudioCaptureState.Faulted, service.State);
         Assert.Equal(AudioCaptureError.DeviceLost, service.Diagnostics.LastError?.Code);
     }
+
+    [Fact]
+    public async Task DeviceLossRecoversAutomaticallyAfterRetries()
+    {
+        var lost = new AudioCaptureException(AudioCaptureError.DeviceLost, "device invalidated");
+        // First two restarts fail, the third succeeds.
+        var backend = new ScriptedRecoveryBackend(lost, lost, null);
+        var delay = new ImmediateRetryDelay();
+        await using var service = new AudioCaptureService(backend, delay);
+        var states = new List<AudioCaptureState>();
+        service.StateChanged += states.Add;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await service.StartAsync();
+
+        backend.Fail(lost);
+
+        await WaitUntilAsync(() => service.State == AudioCaptureState.Capturing && backend.StartCount == 4, timeout.Token);
+        Assert.Contains(AudioCaptureState.Recovering, states);
+        Assert.Null(service.Diagnostics.LastError);
+        Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)], delay.Delays);
+    }
+
+    [Fact]
+    public async Task RecoveryDropsFramesWhileRecovering()
+    {
+        var lost = new AudioCaptureException(AudioCaptureError.DeviceLost, "device invalidated");
+        var gate = new TaskCompletionSource();
+        var backend = new ScriptedRecoveryBackend((AudioCaptureException?)null);
+        var delay = new ImmediateRetryDelay(gate);
+        await using var service = new AudioCaptureService(backend, delay);
+        var frames = 0;
+        service.FrameCaptured += _ => frames++;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await service.StartAsync();
+
+        backend.Fail(lost); // -> Recovering, parked on the delay gate
+        await WaitUntilAsync(() => service.State == AudioCaptureState.Recovering, timeout.Token);
+        backend.Emit(new AudioFrame([1, 0], 48_000, 1, AudioSampleFormat.Pcm16, TimeSpan.Zero), AudioLevelSnapshot.Silence);
+        Assert.Equal(0, frames);
+
+        gate.SetResult(); // let recovery proceed and reconnect
+        await WaitUntilAsync(() => service.State == AudioCaptureState.Capturing, timeout.Token);
+    }
+
+    [Fact]
+    public async Task RecoveryExhaustionFaultsTheService()
+    {
+        var lost = new AudioCaptureException(AudioCaptureError.DeviceLost, "device invalidated");
+        // All five restart attempts fail.
+        var backend = new ScriptedRecoveryBackend(lost, lost, lost, lost, lost);
+        var delay = new ImmediateRetryDelay();
+        await using var service = new AudioCaptureService(backend, delay);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await service.StartAsync();
+
+        backend.Fail(lost);
+
+        await WaitUntilAsync(() => service.State == AudioCaptureState.Faulted, timeout.Token);
+        Assert.Equal(AudioCaptureError.DeviceLost, service.Diagnostics.LastError?.Code);
+        Assert.Equal(5, delay.Delays.Count);
+    }
+
+    [Fact]
+    public async Task NonRetryableFaultGoesTerminalWithoutRecovering()
+    {
+        var backend = new ScriptedRecoveryBackend();
+        var delay = new ImmediateRetryDelay();
+        await using var service = new AudioCaptureService(backend, delay);
+        var states = new List<AudioCaptureState>();
+        service.StateChanged += states.Add;
+        await service.StartAsync();
+
+        backend.Fail(new AudioCaptureException(AudioCaptureError.UnsupportedFormat, "bad format"));
+
+        Assert.Equal(AudioCaptureState.Faulted, service.State);
+        Assert.DoesNotContain(AudioCaptureState.Recovering, states);
+        Assert.Empty(delay.Delays);
+    }
+
+    [Fact]
+    public async Task StopDuringRecoveryLeavesServiceStopped()
+    {
+        var lost = new AudioCaptureException(AudioCaptureError.DeviceLost, "device invalidated");
+        var gate = new TaskCompletionSource();
+        var backend = new ScriptedRecoveryBackend(lost, lost, lost);
+        var delay = new ImmediateRetryDelay(gate);
+        await using var service = new AudioCaptureService(backend, delay);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await service.StartAsync();
+
+        backend.Fail(lost);
+        await WaitUntilAsync(() => service.State == AudioCaptureState.Recovering, timeout.Token);
+
+        await service.StopAsync(); // cancels the recovery parked on the gate
+
+        Assert.Equal(AudioCaptureState.Stopped, service.State);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken)
+    {
+        while (!condition())
+        {
+            await Task.Delay(10, cancellationToken);
+        }
+    }
 }
 
 internal sealed class FakeAudioCaptureBackend : IAudioCaptureBackend
@@ -121,4 +226,57 @@ internal sealed class FakeAudioCaptureBackend : IAudioCaptureBackend
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     public void Emit(AudioFrame frame, AudioLevelSnapshot level) => FrameAvailable?.Invoke(frame, level);
     public void Fail(AudioCaptureException error) => Faulted?.Invoke(error);
+}
+
+/// <summary>
+/// Backend whose restart (StartAsync) fails a scripted number of times before
+/// succeeding, so recovery behaviour can be driven deterministically.
+/// </summary>
+internal sealed class ScriptedRecoveryBackend : IAudioCaptureBackend
+{
+    private readonly Queue<AudioCaptureException?> _startOutcomes;
+
+    public ScriptedRecoveryBackend(params AudioCaptureException?[] restartOutcomes) =>
+        _startOutcomes = new Queue<AudioCaptureException?>(restartOutcomes);
+
+    public int StartCount { get; private set; }
+    public int StopCount { get; private set; }
+    public AudioDeviceInfo? Device { get; private set; }
+    public event Action<AudioFrame, AudioLevelSnapshot>? FrameAvailable;
+    public event Action<AudioCaptureException>? Faulted;
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        StartCount++;
+        // The first StartAsync (initial capture) always succeeds; scripted
+        // outcomes drive the recovery restarts that follow.
+        if (StartCount > 1 && _startOutcomes.Count > 0 && _startOutcomes.Dequeue() is { } error)
+        {
+            throw error;
+        }
+        Device = new AudioDeviceInfo("default", "Default speakers", 48_000, 2, AudioSampleFormat.IeeeFloat32);
+        return Task.CompletedTask;
+    }
+
+    public Task PauseAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task ResumeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken) { StopCount++; return Task.CompletedTask; }
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public void Fail(AudioCaptureException error) => Faulted?.Invoke(error);
+    public void Emit(AudioFrame frame, AudioLevelSnapshot level) => FrameAvailable?.Invoke(frame, level);
+}
+
+internal sealed class ImmediateRetryDelay : IRetryDelay
+{
+    public List<TimeSpan> Delays { get; } = [];
+    private readonly TaskCompletionSource? _gate;
+
+    public ImmediateRetryDelay(TaskCompletionSource? gate = null) => _gate = gate;
+
+    public async Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        Delays.Add(delay);
+        if (_gate is not null) await _gate.Task.WaitAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
 }

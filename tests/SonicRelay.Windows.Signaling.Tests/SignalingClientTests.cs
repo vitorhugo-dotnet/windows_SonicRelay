@@ -128,7 +128,7 @@ public sealed class SignalingClientTests
     }
 
     [Fact]
-    public async Task ReconnectStopsAfterThreeTransientFailures()
+    public async Task ReconnectStopsAfterConfiguredMaxAttempts()
     {
         var initial = new FakeWebSocketConnection();
         var failure = new WebSocketException("transient");
@@ -138,7 +138,8 @@ public sealed class SignalingClientTests
             new FakeWebSocketConnection { ConnectException = failure },
             new FakeWebSocketConnection { ConnectException = failure });
         var delay = new ImmediateReconnectDelay();
-        await using var client = CreateClient(factory, delay: delay);
+        await using var client = CreateClient(factory, delay: delay,
+            policy: new SignalingReconnectPolicy { MaxAttempts = 3 });
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await client.ConnectAsync("session-1", "device-1");
 
@@ -149,16 +150,88 @@ public sealed class SignalingClientTests
         Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)], delay.Delays);
     }
 
+    [Fact]
+    public async Task ReconnectKeepsRetryingPastThreeFailuresByDefault()
+    {
+        var initial = new FakeWebSocketConnection();
+        var failure = new WebSocketException("transient");
+        var factory = new FakeWebSocketFactory(
+            initial,
+            new FakeWebSocketConnection { ConnectException = failure },
+            new FakeWebSocketConnection { ConnectException = failure },
+            new FakeWebSocketConnection { ConnectException = failure },
+            new FakeWebSocketConnection { ConnectException = failure },
+            new FakeWebSocketConnection()); // sixth attempt finally succeeds
+        var delay = new ImmediateReconnectDelay();
+        await using var client = CreateClient(factory, delay: delay);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await client.ConnectAsync("session-1", "device-1");
+
+        initial.QueueClose(WebSocketCloseStatus.EndpointUnavailable);
+        await WaitUntilAsync(
+            () => factory.CreatedCount == 6 && client.State == SignalingConnectionState.Connected,
+            timeout.Token);
+
+        // Backoff is capped exponential: 1, 2, 4, 8, 16 s across the five retries.
+        Assert.Equal(
+            [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(16)],
+            delay.Delays);
+    }
+
+    [Fact]
+    public async Task PingReplyDoesNotStopTheLoopAndMessagesKeepFlowing()
+    {
+        var connection = new FakeWebSocketConnection();
+        var factory = new FakeWebSocketFactory(connection);
+        var handler = new RecordingHandler();
+        await using var client = CreateClient(factory, handler: handler);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await client.ConnectAsync("session-1", "device-1");
+
+        connection.QueueText(new SignalingMessageEnvelope(SignalingMessageTypes.Ping, "session-1", From: "server"));
+        connection.QueueText(new SignalingMessageEnvelope(SignalingMessageTypes.ViewerReady, "session-1", To: "publisher"));
+
+        // The ViewerReady message is still dispatched after the ping was handled.
+        var received = await handler.NextAsync(timeout.Token);
+        while (received.Type == SignalingMessageTypes.Ping) received = await handler.NextAsync(timeout.Token);
+        Assert.Equal(SignalingMessageTypes.ViewerReady, received.Type);
+        Assert.Equal(SignalingConnectionState.Connected, client.State);
+    }
+
+    [Fact]
+    public async Task ThrowingHandlerDoesNotStopSubsequentDispatch()
+    {
+        var connection = new FakeWebSocketConnection();
+        var factory = new FakeWebSocketFactory(connection);
+        var throwing = new ThrowingHandler();
+        var recording = new RecordingHandler();
+        var faults = new List<Exception>();
+        await using var client = CreateClient(factory, handlers: [throwing, recording]);
+        client.HandlerFaulted += faults.Add;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await client.ConnectAsync("session-1", "device-1");
+
+        connection.QueueText(new SignalingMessageEnvelope(SignalingMessageTypes.ViewerReady, "session-1", To: "publisher"));
+
+        var received = await recording.NextAsync(timeout.Token);
+        Assert.Equal(SignalingMessageTypes.ViewerReady, received.Type);
+        Assert.Equal(SignalingConnectionState.Connected, client.State);
+        Assert.NotEmpty(faults);
+    }
+
     private static SignalingClient CreateClient(
         IWebSocketConnectionFactory factory,
         ISignalingMessageHandler? handler = null,
-        IReconnectDelay? delay = null) =>
+        IReadOnlyList<ISignalingMessageHandler>? handlers = null,
+        IReconnectDelay? delay = null,
+        SignalingReconnectPolicy? policy = null) =>
         new(
             new PublisherConfiguration(new Uri("https://api.example/"), new Uri("https://signal.example/ws?tenant=blue"), 4),
             new MemoryTokenStore(Tokens),
-            handler is null ? [] : [handler],
+            handlers ?? (handler is null ? [] : [handler]),
             factory,
-            delay ?? new ImmediateReconnectDelay());
+            delay ?? new ImmediateReconnectDelay(),
+            policy);
 
     private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken)
     {

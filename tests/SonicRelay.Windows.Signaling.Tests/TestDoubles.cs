@@ -98,6 +98,12 @@ internal sealed class FakeWebSocketConnection : IWebSocketConnection
     }
 }
 
+internal sealed class ThrowingHandler : ISignalingMessageHandler
+{
+    public Task HandleAsync(SignalingMessageEnvelope message, CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("handler boom");
+}
+
 internal sealed class ImmediateReconnectDelay : IReconnectDelay
 {
     public List<TimeSpan> Delays { get; } = [];

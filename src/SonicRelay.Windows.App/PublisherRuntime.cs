@@ -1,23 +1,38 @@
 using SonicRelay.Windows.ApiClient.Authentication;
 using SonicRelay.Windows.ApiClient.Devices;
 using SonicRelay.Windows.ApiClient.Sessions;
+using SonicRelay.Windows.ApiClient.WebRtc;
 using SonicRelay.Windows.Audio;
 using SonicRelay.Windows.Core.Configuration;
 using SonicRelay.Windows.Core.Diagnostics;
 using SonicRelay.Windows.Core.Storage;
 using SonicRelay.Windows.Presentation;
 using SonicRelay.Windows.Signaling;
+using SonicRelay.Windows.WebRtc;
 
 namespace SonicRelay.Windows.App;
 
 public sealed class PublisherRuntime : IAsyncDisposable
 {
     private readonly HttpClient httpClient;
+    private readonly IPeerConnectionManager peers;
+    private readonly IWebRtcPublisher webRtcPublisher;
+    private readonly WebRtcAudioBridge audioBridge;
     private string? lastLoggedState;
+    private bool hadActiveSession;
 
-    private PublisherRuntime(HttpClient httpClient, PublisherWorkflow workflow, Uri backendBaseUrl)
+    private PublisherRuntime(
+        HttpClient httpClient,
+        PublisherWorkflow workflow,
+        Uri backendBaseUrl,
+        IPeerConnectionManager peers,
+        IWebRtcPublisher webRtcPublisher,
+        WebRtcAudioBridge audioBridge)
     {
         this.httpClient = httpClient;
+        this.peers = peers;
+        this.webRtcPublisher = webRtcPublisher;
+        this.audioBridge = audioBridge;
         Workflow = workflow;
         BackendBaseUrl = backendBaseUrl;
         DiagnosticLog = new DiagnosticLog();
@@ -33,6 +48,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
     public Uri BackendBaseUrl { get; }
     public DiagnosticLog DiagnosticLog { get; }
     public DiagnosticReportExporter ReportExporter { get; }
+    public IWebRtcPublisher WebRtcPublisher => webRtcPublisher;
 
     public static PublisherRuntime Create(Uri backendBaseUrl)
     {
@@ -48,19 +64,43 @@ public sealed class PublisherRuntime : IAsyncDisposable
         configuration.Validate();
         var tokenStore = new UserScopedTokenStore();
         var http = new HttpClient { BaseAddress = normalized, Timeout = TimeSpan.FromSeconds(30) };
-        var signaling = new SignalingClient(configuration, tokenStore, []);
+
+        // The WebRTC publisher needs the signaling client to send offers/candidates,
+        // but the client takes its handlers up front — register the publisher through
+        // a composite handler after both exist.
+        var signalingHandlers = new CompositeSignalingMessageHandler();
+        var signaling = new SignalingClient(configuration, tokenStore, [signalingHandlers]);
+        var iceServersProvider = new BackendIceServersProvider(new WebRtcApiClient(http, tokenStore));
+        var peers = new PeerConnectionManager(
+            new SipSorceryPeerConnectionFactory(iceServersProvider),
+            new WebRtcPublisherOptions([new WebRtcIceServer(["stun:stun.l.google.com:19302"])]));
+        var webRtcPublisher = new WebRtcPublisher(signaling, peers);
+        signalingHandlers.Register(webRtcPublisher);
+
+        var audio = new AudioCaptureService();
+        var audioBridge = new WebRtcAudioBridge(audio, webRtcPublisher);
         var workflow = new PublisherWorkflow(
             new AuthApiClient(http, tokenStore),
             new DeviceApiClient(http, tokenStore),
             new SessionApiClient(http, tokenStore),
             signaling,
-            new AudioCaptureService(),
+            audio,
             Environment.MachineName);
-        return new PublisherRuntime(http, workflow, normalized);
+        return new PublisherRuntime(http, workflow, normalized, peers, webRtcPublisher, audioBridge);
     }
 
     private void OnWorkflowStateChanged(PublisherSnapshot state)
     {
+        // The publisher closes signaling locally on session end, so it never
+        // receives its own session.ended; tear down peer connections here when
+        // the active session clears.
+        var hasSession = state.SessionId is not null;
+        if (hadActiveSession && !hasSession)
+        {
+            _ = peers.RemoveAllAsync();
+        }
+        hadActiveSession = hasSession;
+
         var signature = $"{state.IsAuthenticated}|{state.SignalingState}|{state.AudioState}|{state.ViewerCount}|{state.ErrorMessage}";
         if (signature == lastLoggedState) return;
         lastLoggedState = signature;
@@ -88,7 +128,11 @@ public sealed class PublisherRuntime : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Workflow.StateChanged -= OnWorkflowStateChanged;
+        // Stop the audio pump before the workflow disposes the capture service,
+        // then tear down the WebRTC publisher (which disposes the peer manager).
+        await audioBridge.DisposeAsync();
         await Workflow.DisposeAsync();
+        await webRtcPublisher.DisposeAsync();
         httpClient.Dispose();
         DiagnosticLog.Dispose();
     }

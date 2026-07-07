@@ -16,16 +16,28 @@ internal sealed class ReconnectDelay : IReconnectDelay
         Task.Delay(delay, cancellationToken);
 }
 
+/// <summary>
+/// Controls how the signaling client reconnects after a transient drop. Uses
+/// capped exponential backoff and, by default, retries indefinitely so a long
+/// outage (API restart, network blip) recovers on its own rather than parking
+/// the connection in a terminal <see cref="SignalingConnectionState.Faulted"/>.
+/// </summary>
+public sealed record SignalingReconnectPolicy
+{
+    /// <summary>Maximum reconnect attempts before faulting; <c>null</c> means unlimited.</summary>
+    public int? MaxAttempts { get; init; }
+    public TimeSpan BaseDelay { get; init; } = TimeSpan.FromSeconds(1);
+    public TimeSpan MaxDelay { get; init; } = TimeSpan.FromSeconds(30);
+}
+
 public sealed class SignalingClient : ISignalingClient
 {
-    private static readonly TimeSpan[] ReconnectDelays =
-        [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)];
-
     private readonly PublisherConfiguration configuration;
     private readonly ITokenStore tokenStore;
     private readonly IReadOnlyList<ISignalingMessageHandler> handlers;
     private readonly IWebSocketConnectionFactory connectionFactory;
     private readonly IReconnectDelay reconnectDelay;
+    private readonly SignalingReconnectPolicy reconnectPolicy;
     private readonly SemaphoreSlim lifecycleLock = new(1, 1);
     private readonly SemaphoreSlim sendLock = new(1, 1);
     private CancellationTokenSource? lifecycleCancellation;
@@ -47,17 +59,25 @@ public sealed class SignalingClient : ISignalingClient
         ITokenStore tokenStore,
         IEnumerable<ISignalingMessageHandler> handlers,
         IWebSocketConnectionFactory connectionFactory,
-        IReconnectDelay reconnectDelay)
+        IReconnectDelay reconnectDelay,
+        SignalingReconnectPolicy? reconnectPolicy = null)
     {
         this.configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         this.tokenStore = tokenStore ?? throw new ArgumentNullException(nameof(tokenStore));
         this.handlers = handlers?.ToArray() ?? throw new ArgumentNullException(nameof(handlers));
         this.connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         this.reconnectDelay = reconnectDelay ?? throw new ArgumentNullException(nameof(reconnectDelay));
+        this.reconnectPolicy = reconnectPolicy ?? new SignalingReconnectPolicy();
     }
 
     public SignalingConnectionState State { get; private set; } = SignalingConnectionState.Disconnected;
     public event Action<SignalingConnectionState>? StateChanged;
+
+    /// <summary>
+    /// Raised when a registered message handler throws. The receive loop keeps
+    /// running so one faulting handler cannot silently kill signaling.
+    /// </summary>
+    public event Action<Exception>? HandlerFaulted;
 
     public async Task ConnectAsync(string sessionId, string deviceId, CancellationToken cancellationToken = default)
     {
@@ -211,12 +231,38 @@ public sealed class SignalingClient : ISignalingClient
 
                 if (message.Type == SignalingMessageTypes.Ping)
                 {
-                    await SendAsync(new SignalingMessageEnvelope(SignalingMessageTypes.Pong, activeSessionId, message.From), cancellationToken);
+                    // Reply on the current socket directly; the public SendAsync
+                    // throws a non-transient InvalidOperationException if the state
+                    // is briefly not Connected (e.g. mid-reconnect), which would
+                    // otherwise escape and silently kill the receive loop. A failed
+                    // pong is never fatal — the next receive surfaces real errors.
+                    try
+                    {
+                        await SendCoreAsync(current, new SignalingMessageEnvelope(SignalingMessageTypes.Pong, activeSessionId, message.From), cancellationToken);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                    }
                 }
 
+                // Isolate handler dispatch: a handler throwing (e.g. the WebRTC
+                // publisher raising a non-transient WebRtcPublisherException) must
+                // not tear down signaling or skip the remaining handlers' turn on
+                // future messages.
                 foreach (var handler in handlers)
                 {
-                    await handler.HandleAsync(message, cancellationToken);
+                    try
+                    {
+                        await handler.HandleAsync(message, cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+                    catch (Exception exception)
+                    {
+                        HandlerFaulted?.Invoke(exception);
+                    }
                 }
 
                 if (message.Type == SignalingMessageTypes.SessionEnded)
@@ -243,11 +289,11 @@ public sealed class SignalingClient : ISignalingClient
     private async Task<bool> TryReconnectAsync(CancellationToken cancellationToken)
     {
         SetState(SignalingConnectionState.Reconnecting);
-        foreach (var delay in ReconnectDelays)
+        for (var attempt = 0; reconnectPolicy.MaxAttempts is null || attempt < reconnectPolicy.MaxAttempts; attempt++)
         {
             try
             {
-                await reconnectDelay.DelayAsync(delay, cancellationToken);
+                await reconnectDelay.DelayAsync(ReconnectDelayFor(attempt), cancellationToken);
                 await OpenConnectionAsync(cancellationToken);
                 return true;
             }
@@ -260,6 +306,18 @@ public sealed class SignalingClient : ISignalingClient
             }
         }
         return false;
+    }
+
+    private TimeSpan ReconnectDelayFor(int attempt)
+    {
+        // Capped exponential backoff: BaseDelay * 2^attempt, clamped to MaxDelay.
+        // The shift is bounded so it cannot overflow on a long-lived reconnect loop.
+        var multiplier = 1L << Math.Min(attempt, 30);
+        var ticks = reconnectPolicy.BaseDelay.Ticks * multiplier;
+        var capped = ticks < 0 || ticks > reconnectPolicy.MaxDelay.Ticks
+            ? reconnectPolicy.MaxDelay.Ticks
+            : ticks;
+        return TimeSpan.FromTicks(capped);
     }
 
     private async Task CloseFromReceiveLoopAsync()

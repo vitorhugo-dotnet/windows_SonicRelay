@@ -1,21 +1,61 @@
 namespace SonicRelay.Windows.Audio;
 
+internal interface IRetryDelay
+{
+    Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken);
+}
+
+internal sealed class RetryDelay : IRetryDelay
+{
+    public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) => Task.Delay(delay, cancellationToken);
+}
+
+/// <summary>
+/// How capture recovers from a transient device fault (default render endpoint
+/// invalidated/disconnected or its format changed mid-stream). Restarting the
+/// backend re-resolves the current default endpoint.
+/// </summary>
+public sealed record AudioRecoveryPolicy
+{
+    public int MaxAttempts { get; init; } = 5;
+    public IReadOnlyList<TimeSpan> Delays { get; init; } =
+    [
+        TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4),
+        TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(8)
+    ];
+
+    public TimeSpan DelayFor(int attempt) =>
+        Delays.Count == 0 ? TimeSpan.Zero : Delays[Math.Min(attempt, Delays.Count - 1)];
+}
+
 public sealed class AudioCaptureService : IAudioCaptureService
 {
     private readonly IAudioCaptureBackend _backend;
+    private readonly IRetryDelay _retryDelay;
+    private readonly AudioRecoveryPolicy _recoveryPolicy;
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private AudioCaptureDiagnostics _diagnostics = new(AudioCaptureState.Stopped, null, null, AudioLevelSnapshot.Silence, 0, 0);
+    private CancellationTokenSource? _recoveryCancellation;
+    private Task _recoveryTask = Task.CompletedTask;
     private bool _disposed;
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     public AudioCaptureService() : this(new WasapiLoopbackBackend()) { }
 
-    internal AudioCaptureService(IAudioCaptureBackend backend)
+    internal AudioCaptureService(
+        IAudioCaptureBackend backend,
+        IRetryDelay? retryDelay = null,
+        AudioRecoveryPolicy? recoveryPolicy = null)
     {
         _backend = backend;
+        _retryDelay = retryDelay ?? new RetryDelay();
+        _recoveryPolicy = recoveryPolicy ?? new AudioRecoveryPolicy();
         _backend.FrameAvailable += OnFrameAvailable;
         _backend.Faulted += OnBackendFaulted;
     }
+
+    private static bool IsRetryable(AudioCaptureError error) =>
+        error is AudioCaptureError.DeviceLost or AudioCaptureError.NoDevice;
 
     public AudioCaptureState State => _diagnostics.State;
     public AudioCaptureDiagnostics Diagnostics => _diagnostics;
@@ -52,6 +92,9 @@ public sealed class AudioCaptureService : IAudioCaptureService
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
+        // Cancel any in-flight recovery before taking the lifecycle lock so a
+        // recovery attempt currently holding it observes cancellation and exits.
+        await CancelRecoveryAsync().ConfigureAwait(false);
         await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -112,6 +155,7 @@ public sealed class AudioCaptureService : IAudioCaptureService
         _backend.FrameAvailable -= OnFrameAvailable;
         _backend.Faulted -= OnBackendFaulted;
         await _backend.DisposeAsync().ConfigureAwait(false);
+        _recoveryCancellation?.Dispose();
         _lifecycle.Dispose();
     }
 
@@ -128,7 +172,95 @@ public sealed class AudioCaptureService : IAudioCaptureService
         LevelChanged?.Invoke(level);
     }
 
-    private void OnBackendFaulted(AudioCaptureException error) => SetFailure(error);
+    private void OnBackendFaulted(AudioCaptureException error)
+    {
+        // A recoverable device fault (endpoint invalidated/lost mid-stream) is
+        // retried automatically instead of going terminal; other faults
+        // (unsupported format, access denied) stay terminal.
+        if (IsRetryable(error.Error) && State is AudioCaptureState.Capturing or AudioCaptureState.Paused)
+        {
+            BeginRecovery(error);
+        }
+        else
+        {
+            SetFailure(error);
+        }
+    }
+
+    private void BeginRecovery(AudioCaptureException error)
+    {
+        _diagnostics = _diagnostics with { LastError = new(error.Error, error.Message), Level = AudioLevelSnapshot.Silence };
+        SetState(AudioCaptureState.Recovering);
+        _recoveryCancellation?.Dispose();
+        _recoveryCancellation = new CancellationTokenSource();
+        _recoveryTask = Task.Run(() => RecoverAsync(_recoveryCancellation.Token));
+    }
+
+    private async Task RecoverAsync(CancellationToken cancellationToken)
+    {
+        AudioCaptureException? lastError = null;
+        for (var attempt = 0; attempt < _recoveryPolicy.MaxAttempts; attempt++)
+        {
+            try
+            {
+                await _retryDelay.DelayAsync(_recoveryPolicy.DelayFor(attempt), cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            await _lifecycle.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                // Stop/Dispose cancelled recovery, or the state moved on — abandon.
+                if (cancellationToken.IsCancellationRequested || State != AudioCaptureState.Recovering) return;
+                // Restart re-resolves the current default render endpoint.
+                await _backend.StopAsync(cancellationToken).ConfigureAwait(false);
+                await _backend.StartAsync(cancellationToken).ConfigureAwait(false);
+                _diagnostics = _diagnostics with { Device = _backend.Device, LastError = null };
+                SetState(AudioCaptureState.Capturing);
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (AudioCaptureException retryError)
+            {
+                lastError = retryError;
+                if (!IsRetryable(retryError.Error))
+                {
+                    SetFailure(retryError);
+                    return;
+                }
+            }
+            catch (Exception unexpected)
+            {
+                SetFailure(new AudioCaptureException(AudioCaptureError.PlatformFailure, "Windows audio recovery failed.", unexpected));
+                return;
+            }
+            finally
+            {
+                _lifecycle.Release();
+            }
+        }
+
+        if (!cancellationToken.IsCancellationRequested)
+        {
+            SetFailure(lastError ?? new AudioCaptureException(AudioCaptureError.DeviceLost, "Audio capture could not recover."));
+        }
+    }
+
+    private async Task CancelRecoveryAsync()
+    {
+        var cancellation = _recoveryCancellation;
+        var task = _recoveryTask;
+        if (cancellation is null) return;
+        await cancellation.CancelAsync().ConfigureAwait(false);
+        try { await task.ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+    }
 
     private void SetFailure(AudioCaptureException error)
     {

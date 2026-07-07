@@ -1,6 +1,6 @@
 namespace SonicRelay.Windows.Audio;
 
-public enum AudioCaptureState { Stopped, Starting, Capturing, Paused, Stopping, Faulted }
+public enum AudioCaptureState { Stopped, Starting, Capturing, Paused, Stopping, Recovering, Faulted }
 
 public enum AudioSampleFormat { Pcm16, IeeeFloat32 }
 

@@ -38,18 +38,45 @@ public sealed class WebRtcAudioFrame
     public TimeSpan Timestamp { get; }
 }
 
-public sealed class WebRtcPublisherOptions
+public sealed record WebRtcIceServer
 {
-    public WebRtcPublisherOptions(IEnumerable<string>? iceServers = null)
+    public WebRtcIceServer(IEnumerable<string> urls, string? username = null, string? credential = null)
     {
-        IceServers = (iceServers ?? []).Select(server =>
+        Urls = (urls ?? throw new ArgumentNullException(nameof(urls))).Select(url =>
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(server);
-            return server;
+            ArgumentException.ThrowIfNullOrWhiteSpace(url);
+            return url;
         }).ToArray();
+        if (Urls.Count == 0) throw new ArgumentException("An ICE server requires at least one URL.", nameof(urls));
+        Username = username;
+        Credential = credential;
     }
 
-    public IReadOnlyList<string> IceServers { get; }
+    public IReadOnlyList<string> Urls { get; }
+    public string? Username { get; }
+    public string? Credential { get; }
+}
+
+/// <summary>
+/// Resolves the ICE servers (STUN/TURN plus short-lived TURN credentials) to
+/// apply to a new peer connection. Implementations live outside this project
+/// (e.g. backed by the SonicRelay API) so the WebRTC layer stays free of HTTP
+/// concerns; they must not throw and should fall back to STUN-only defaults.
+/// </summary>
+public interface IIceServersProvider
+{
+    Task<IReadOnlyList<WebRtcIceServer>> GetIceServersAsync(CancellationToken cancellationToken = default);
+}
+
+public sealed class WebRtcPublisherOptions
+{
+    public WebRtcPublisherOptions(IEnumerable<WebRtcIceServer>? iceServers = null)
+    {
+        IceServers = (iceServers ?? []).Select(server =>
+            server ?? throw new ArgumentException("ICE servers cannot be null.", nameof(iceServers))).ToArray();
+    }
+
+    public IReadOnlyList<WebRtcIceServer> IceServers { get; }
 }
 
 public sealed record PeerConnectionDiagnostics(
