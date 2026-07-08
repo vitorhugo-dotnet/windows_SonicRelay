@@ -27,7 +27,8 @@ public sealed class PublisherRuntime : IAsyncDisposable
         Uri backendBaseUrl,
         IPeerConnectionManager peers,
         IWebRtcPublisher webRtcPublisher,
-        WebRtcAudioBridge audioBridge)
+        WebRtcAudioBridge audioBridge,
+        RelayPreferenceStore relayPreference)
     {
         this.httpClient = httpClient;
         this.peers = peers;
@@ -35,6 +36,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
         this.audioBridge = audioBridge;
         Workflow = workflow;
         BackendBaseUrl = backendBaseUrl;
+        RelayPreference = relayPreference;
         DiagnosticLog = new DiagnosticLog();
         ReportExporter = new DiagnosticReportExporter();
         Workflow.StateChanged += OnWorkflowStateChanged;
@@ -46,6 +48,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
 
     public PublisherWorkflow Workflow { get; }
     public Uri BackendBaseUrl { get; }
+    public RelayPreferenceStore RelayPreference { get; }
     public DiagnosticLog DiagnosticLog { get; }
     public DiagnosticReportExporter ReportExporter { get; }
     public IWebRtcPublisher WebRtcPublisher => webRtcPublisher;
@@ -71,8 +74,9 @@ public sealed class PublisherRuntime : IAsyncDisposable
         var signalingHandlers = new CompositeSignalingMessageHandler();
         var signaling = new SignalingClient(configuration, tokenStore, [signalingHandlers]);
         var iceServersProvider = new BackendIceServersProvider(new WebRtcApiClient(http, tokenStore));
+        var relayPreference = new RelayPreferenceStore();
         var peers = new PeerConnectionManager(
-            new SipSorceryPeerConnectionFactory(iceServersProvider),
+            new SipSorceryPeerConnectionFactory(iceServersProvider, () => relayPreference.ForceRelay),
             new WebRtcPublisherOptions([new WebRtcIceServer(["stun:stun.l.google.com:19302"])]));
         var webRtcPublisher = new WebRtcPublisher(signaling, peers);
         signalingHandlers.Register(webRtcPublisher);
@@ -86,7 +90,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
             signaling,
             audio,
             Environment.MachineName);
-        return new PublisherRuntime(http, workflow, normalized, peers, webRtcPublisher, audioBridge);
+        return new PublisherRuntime(http, workflow, normalized, peers, webRtcPublisher, audioBridge, relayPreference);
     }
 
     private void OnWorkflowStateChanged(PublisherSnapshot state)
