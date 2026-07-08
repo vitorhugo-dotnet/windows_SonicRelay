@@ -92,6 +92,29 @@ apply a different profile. The page shows the effective codec settings (codec,
 bitrate, channels, frame duration, sample rate) and an approximate traffic
 estimate (kbps, MB/min, MB/hour) derived from the Opus bitrate.
 
+## Audio source selection
+
+By default the publisher captures the current Windows **default** render endpoint.
+The Audio page's **Audio source** section lets the user instead pick a specific
+output device: it lists the active render endpoints (via Core Audio / MMDevice,
+read-only, no elevation), marks the current default, and offers a "System default"
+option that follows whatever Windows chooses. The selection is persisted per user
+in `%LocalAppData%\SonicRelay\WindowsPublisher\audio-output.json`
+(`AudioOutputPreferenceStore`) and restored on startup via
+`AudioCaptureService.SelectOutputDevice`.
+
+The chosen device is opened at the next capture start (WASAPI loopback on that
+endpoint), so a change applies when capture is (re)started; the picker is disabled
+while capturing. If a previously saved device is no longer present when capture
+starts, the capture layer **falls back safely to the system default** and the page
+shows a note explaining the fallback. Enumeration is entirely defensive — any COM
+failure simply yields the default-only behaviour.
+
+**Limitation (deferred):** publishing a *mix* of several output devices as one
+track is out of scope for now; a single output endpoint is captured. The capture
+layer is kept isolated so per-application or multi-device filtering can be added
+later without reworking the WebRTC/Opus path.
+
 ## Non-admin requirement
 
 The Windows Publisher must install, configure, and run as a standard Windows user without elevation. Its normal operation must not depend on an administrator-approved installer, Windows service, custom audio driver, kernel-mode component, machine-wide runtime, inbound firewall rule, HKLM configuration, or runtime writes to protected locations such as Program Files.

@@ -187,6 +187,37 @@ public sealed class AudioCaptureServiceTests
         Assert.Equal(AudioCaptureState.Stopped, service.State);
     }
 
+    [Fact]
+    public void SelectOutputDeviceUpdatesPreferredIdAndTreatsBlankAsDefault()
+    {
+        var backend = new FakeAudioCaptureBackend();
+        var service = new AudioCaptureService(backend);
+        Assert.Null(service.PreferredDeviceId);
+
+        service.SelectOutputDevice("{0.0.0.00000000}.{guid}");
+        Assert.Equal("{0.0.0.00000000}.{guid}", service.PreferredDeviceId);
+
+        service.SelectOutputDevice("   ");
+        Assert.Null(service.PreferredDeviceId);
+    }
+
+    [Fact]
+    public void GetOutputDevicesReturnsTheProbeList()
+    {
+        var probe = new FakeOutputDeviceProbe(
+        [
+            new AudioOutputDevice("id-1", "Speakers", IsDefault: true),
+            new AudioOutputDevice("id-2", "Headphones", IsDefault: false),
+        ]);
+        var service = new AudioCaptureService(new FakeAudioCaptureBackend(), deviceProbe: probe);
+
+        var devices = service.GetOutputDevices();
+
+        Assert.Equal(2, devices.Count);
+        Assert.True(devices[0].IsDefault);
+        Assert.Equal("Headphones", devices[1].Name);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
         while (!condition())
@@ -194,6 +225,11 @@ public sealed class AudioCaptureServiceTests
             await Task.Delay(10, cancellationToken);
         }
     }
+}
+
+internal sealed class FakeOutputDeviceProbe(IReadOnlyList<AudioOutputDevice> devices) : IAudioOutputDeviceProbe
+{
+    public IReadOnlyList<AudioOutputDevice> GetOutputDevices() => devices;
 }
 
 internal sealed class FakeAudioCaptureBackend : IAudioCaptureBackend

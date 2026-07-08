@@ -29,6 +29,24 @@
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
             <StackPanel Spacing="10">
+                <TextBlock FontWeight="SemiBold" Text="Audio source" />
+                <TextBlock Text="Choose which Windows output device is captured and published. The change applies the next time capture starts."
+                           TextWrapping="Wrap" Opacity="0.8" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <ComboBox x:Name="OutputCombo" Header="Output device" MinWidth="320"
+                              SelectionChanged="Output_SelectionChanged" />
+                    <Button x:Name="RefreshDevicesButton" Content="Refresh" Click="RefreshDevices_Click"
+                            VerticalAlignment="Bottom" />
+                </StackPanel>
+                <TextBlock x:Name="OutputFallbackText" Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                           TextWrapping="Wrap" Visibility="Collapsed" />
+            </StackPanel>
+        </Border>
+
+        <Border BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,8,0,0"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+            <StackPanel Spacing="10">
                 <TextBlock FontWeight="SemiBold" Text="Stream quality (Opus)" />
                 <TextBlock Text="Choose how audio is encoded before it is sent over WebRTC. Lower profiles reduce bandwidth; the change applies the next time capture starts."
                            TextWrapping="Wrap" Opacity="0.8" />

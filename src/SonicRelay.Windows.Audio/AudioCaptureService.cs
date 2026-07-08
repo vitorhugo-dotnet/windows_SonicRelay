@@ -28,11 +28,20 @@ public sealed record AudioRecoveryPolicy
         Delays.Count == 0 ? TimeSpan.Zero : Delays[Math.Min(attempt, Delays.Count - 1)];
 }
 
+/// <summary>Mutable holder for the selected output device id, shared between the
+/// service and the backend so a selection applies to the next capture start.</summary>
+internal sealed class OutputDeviceSelection
+{
+    public string? PreferredId;
+}
+
 public sealed class AudioCaptureService : IAudioCaptureService
 {
     private readonly IAudioCaptureBackend _backend;
     private readonly IRetryDelay _retryDelay;
     private readonly AudioRecoveryPolicy _recoveryPolicy;
+    private readonly IAudioOutputDeviceProbe _deviceProbe;
+    private readonly OutputDeviceSelection _selection;
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private AudioCaptureDiagnostics _diagnostics = new(AudioCaptureState.Stopped, null, null, AudioLevelSnapshot.Silence, 0, 0);
     private CancellationTokenSource? _recoveryCancellation;
@@ -40,16 +49,29 @@ public sealed class AudioCaptureService : IAudioCaptureService
     private bool _disposed;
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    public AudioCaptureService() : this(new WasapiLoopbackBackend()) { }
+    public AudioCaptureService() : this(new OutputDeviceSelection()) { }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private AudioCaptureService(OutputDeviceSelection selection)
+        : this(
+            new WasapiLoopbackBackend(() => selection.PreferredId),
+            deviceProbe: new WasapiOutputDeviceProbe(),
+            selection: selection)
+    {
+    }
 
     internal AudioCaptureService(
         IAudioCaptureBackend backend,
         IRetryDelay? retryDelay = null,
-        AudioRecoveryPolicy? recoveryPolicy = null)
+        AudioRecoveryPolicy? recoveryPolicy = null,
+        IAudioOutputDeviceProbe? deviceProbe = null,
+        OutputDeviceSelection? selection = null)
     {
         _backend = backend;
         _retryDelay = retryDelay ?? new RetryDelay();
         _recoveryPolicy = recoveryPolicy ?? new AudioRecoveryPolicy();
+        _deviceProbe = deviceProbe ?? new NullOutputDeviceProbe();
+        _selection = selection ?? new OutputDeviceSelection();
         _backend.FrameAvailable += OnFrameAvailable;
         _backend.Faulted += OnBackendFaulted;
     }
@@ -59,9 +81,15 @@ public sealed class AudioCaptureService : IAudioCaptureService
 
     public AudioCaptureState State => _diagnostics.State;
     public AudioCaptureDiagnostics Diagnostics => _diagnostics;
+    public string? PreferredDeviceId => _selection.PreferredId;
     public event Action<AudioCaptureState>? StateChanged;
     public event Action<AudioFrame>? FrameCaptured;
     public event Action<AudioLevelSnapshot>? LevelChanged;
+
+    public IReadOnlyList<AudioOutputDevice> GetOutputDevices() => _deviceProbe.GetOutputDevices();
+
+    public void SelectOutputDevice(string? deviceId) =>
+        _selection.PreferredId = string.IsNullOrWhiteSpace(deviceId) ? null : deviceId;
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {

@@ -30,7 +30,9 @@ public sealed class PublisherRuntime : IAsyncDisposable
         IWebRtcPublisher webRtcPublisher,
         WebRtcAudioBridge audioBridge,
         RelayPreferenceStore relayPreference,
-        AudioQualityStore audioQuality)
+        AudioQualityStore audioQuality,
+        IAudioCaptureService audioCapture,
+        AudioOutputPreferenceStore audioOutput)
     {
         this.httpClient = httpClient;
         this.peers = peers;
@@ -40,6 +42,8 @@ public sealed class PublisherRuntime : IAsyncDisposable
         BackendBaseUrl = backendBaseUrl;
         RelayPreference = relayPreference;
         AudioQuality = audioQuality;
+        AudioCapture = audioCapture;
+        AudioOutput = audioOutput;
         DiagnosticLog = new DiagnosticLog();
         ReportExporter = new DiagnosticReportExporter();
         Workflow.StateChanged += OnWorkflowStateChanged;
@@ -53,6 +57,8 @@ public sealed class PublisherRuntime : IAsyncDisposable
     public Uri BackendBaseUrl { get; }
     public RelayPreferenceStore RelayPreference { get; }
     public AudioQualityStore AudioQuality { get; }
+    public IAudioCaptureService AudioCapture { get; }
+    public AudioOutputPreferenceStore AudioOutput { get; }
     public DiagnosticLog DiagnosticLog { get; }
     public DiagnosticReportExporter ReportExporter { get; }
     public IWebRtcPublisher WebRtcPublisher => webRtcPublisher;
@@ -90,6 +96,9 @@ public sealed class PublisherRuntime : IAsyncDisposable
         signalingHandlers.Register(webRtcPublisher);
 
         var audio = new AudioCaptureService();
+        var audioOutput = new AudioOutputPreferenceStore();
+        // Restore the previously selected output device (null = system default).
+        audio.SelectOutputDevice(audioOutput.SelectedDeviceId);
         var audioBridge = new WebRtcAudioBridge(audio, webRtcPublisher);
         var workflow = new PublisherWorkflow(
             new AuthApiClient(http, tokenStore),
@@ -98,7 +107,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
             signaling,
             audio,
             Environment.MachineName);
-        return new PublisherRuntime(http, workflow, normalized, peers, webRtcPublisher, audioBridge, relayPreference, audioQuality);
+        return new PublisherRuntime(http, workflow, normalized, peers, webRtcPublisher, audioBridge, relayPreference, audioQuality, audio, audioOutput);
     }
 
     private void OnWorkflowStateChanged(PublisherSnapshot state)

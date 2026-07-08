@@ -9,10 +9,17 @@ internal sealed class WasapiLoopbackBackend : IAudioCaptureBackend
 {
     private const int DeviceInvalidated = unchecked((int)0x88890004);
     private const int DeviceNotFound = unchecked((int)0x80070490);
+    private readonly Func<string?> _preferredDeviceId;
     private CancellationTokenSource? _captureCancellation;
     private Task? _captureTask;
     private IAudioClient? _audioClient;
     private volatile bool _paused;
+
+    public WasapiLoopbackBackend(Func<string?>? preferredDeviceId = null)
+    {
+        // Read at each StartAsync so a settings change applies to the next capture.
+        _preferredDeviceId = preferredDeviceId ?? (() => null);
+    }
 
     public AudioDeviceInfo? Device { get; private set; }
     public event Action<AudioFrame, AudioLevelSnapshot>? FrameAvailable;
@@ -81,7 +88,7 @@ internal sealed class WasapiLoopbackBackend : IAudioCaptureBackend
         try
         {
             enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-            CheckHResult(enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out endpoint), "No default render device is available.");
+            endpoint = ResolvePreferredEndpoint(enumerator);
             var deviceId = GetDeviceId(endpoint);
             var deviceName = TryGetDeviceName(endpoint) ?? "Default render device";
             var audioClientGuid = typeof(IAudioClient).GUID;
@@ -123,6 +130,23 @@ internal sealed class WasapiLoopbackBackend : IAudioCaptureBackend
             if (mixFormatPointer != IntPtr.Zero) Marshal.FreeCoTaskMem(mixFormatPointer);
             if (comInitialized) NativeMethods.CoUninitialize();
         }
+    }
+
+    // Opens the user-selected render endpoint when one is set, falling back to the
+    // system default if no id is set or the saved device is no longer present.
+    private IMMDevice ResolvePreferredEndpoint(IMMDeviceEnumerator enumerator)
+    {
+        var preferredId = _preferredDeviceId();
+        if (!string.IsNullOrWhiteSpace(preferredId)
+            && enumerator.GetDevice(preferredId, out var selected) >= 0
+            && selected is not null)
+        {
+            return selected;
+        }
+        CheckHResult(
+            enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out var endpoint),
+            "No default render device is available.");
+        return endpoint;
     }
 
     private void ReadAvailablePackets(IAudioCaptureClient captureClient, WaveFormatEx format, AudioSampleFormat sampleFormat, TimeSpan timestamp)
@@ -175,14 +199,14 @@ internal sealed class WasapiLoopbackBackend : IAudioCaptureBackend
         throw new AudioCaptureException(AudioCaptureError.UnsupportedFormat, $"Unsupported render mix format: tag {format.FormatTag}, {format.BitsPerSample} bits.");
     }
 
-    private static string GetDeviceId(IMMDevice endpoint)
+    internal static string GetDeviceId(IMMDevice endpoint)
     {
         CheckHResult(endpoint.GetId(out var idPointer), "The render device identifier is unavailable.");
         try { return Marshal.PtrToStringUni(idPointer) ?? "default"; }
         finally { Marshal.FreeCoTaskMem(idPointer); }
     }
 
-    private static string? GetDeviceName(IMMDevice endpoint)
+    internal static string? GetDeviceName(IMMDevice endpoint)
     {
         IPropertyStore? store = null;
         try
@@ -196,7 +220,7 @@ internal sealed class WasapiLoopbackBackend : IAudioCaptureBackend
         finally { ReleaseCom(store); }
     }
 
-    private static string? TryGetDeviceName(IMMDevice endpoint)
+    internal static string? TryGetDeviceName(IMMDevice endpoint)
     {
         try { return GetDeviceName(endpoint); }
         catch (WasapiException) { return null; }
@@ -284,8 +308,17 @@ internal class MMDeviceEnumeratorComObject;
 [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDeviceEnumerator
 {
-    [PreserveSig] int EnumAudioEndpoints(EDataFlow dataFlow, uint stateMask, out IntPtr devices);
+    // Declaration order must match the COM vtable order.
+    [PreserveSig] int EnumAudioEndpoints(EDataFlow dataFlow, uint stateMask, [MarshalAs(UnmanagedType.Interface)] out IMMDeviceCollection devices);
     [PreserveSig] int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice endpoint);
+    [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice device);
+}
+
+[ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMDeviceCollection
+{
+    [PreserveSig] int GetCount(out uint count);
+    [PreserveSig] int Item(uint index, out IMMDevice device);
 }
 
 [ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

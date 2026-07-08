@@ -293,6 +293,7 @@ public sealed class PublisherWorkflowTests
     {
         public AudioCaptureState State { get; private set; } = AudioCaptureState.Stopped;
         public AudioCaptureDiagnostics Diagnostics => new(State, null, null, AudioLevelSnapshot.Silence, 0, 0);
+        public string? PreferredDeviceId { get; private set; }
         public bool StartCalled { get; private set; }
         public bool StopCalled { get; private set; }
         public event Action<AudioCaptureState>? StateChanged;
@@ -302,6 +303,8 @@ public sealed class PublisherWorkflowTests
         public Task StopAsync(CancellationToken cancellationToken = default) { StopCalled = true; State = AudioCaptureState.Stopped; StateChanged?.Invoke(State); return Task.CompletedTask; }
         public Task PauseAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task ResumeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public IReadOnlyList<AudioOutputDevice> GetOutputDevices() => [];
+        public void SelectOutputDevice(string? deviceId) => PreferredDeviceId = deviceId;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

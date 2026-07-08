@@ -13,6 +13,25 @@ public sealed record AudioDeviceInfo(
     int ChannelCount,
     AudioSampleFormat Format);
 
+/// <summary>A selectable Windows render (output) endpoint for the source picker.</summary>
+public sealed record AudioOutputDevice(string Id, string Name, bool IsDefault);
+
+/// <summary>
+/// Enumerates the active Windows render endpoints so the user can choose which
+/// output is captured/published. Implementations must never throw; they return an
+/// empty list when enumeration is unavailable.
+/// </summary>
+public interface IAudioOutputDeviceProbe
+{
+    IReadOnlyList<AudioOutputDevice> GetOutputDevices();
+}
+
+/// <summary>No-op probe for non-Windows platforms and tests.</summary>
+public sealed class NullOutputDeviceProbe : IAudioOutputDeviceProbe
+{
+    public IReadOnlyList<AudioOutputDevice> GetOutputDevices() => [];
+}
+
 public sealed class AudioFrame
 {
     private readonly byte[] _data;
