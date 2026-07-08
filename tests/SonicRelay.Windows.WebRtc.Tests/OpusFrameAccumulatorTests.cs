@@ -75,6 +75,36 @@ public sealed class OpusFrameAccumulatorTests
         Assert.Throws<ArgumentException>(() => accumulator.Append(MakeStereo(10), 44101, 2));
     }
 
+    [Fact]
+    public void Emits_10ms_stereo_frames_when_configured()
+    {
+        // 10 ms stereo at 48 kHz = 480 samples/channel * 2 = 960 shorts per frame.
+        var accumulator = new OpusFrameAccumulator(48000, 2, frameDurationMs: 10);
+        Assert.Equal(960, accumulator.TargetFrameSize);
+        accumulator.Append(MakeStereo(480), 48000, 2);
+
+        Assert.True(accumulator.TryTakeFrame(out var frame));
+        Assert.Equal(960, frame.Length);
+        Assert.False(accumulator.TryTakeFrame(out _));
+    }
+
+    [Fact]
+    public void Emits_40ms_stereo_frames_when_configured()
+    {
+        // 40 ms stereo at 48 kHz = 1920 samples/channel * 2 = 3840 shorts per frame.
+        var accumulator = new OpusFrameAccumulator(48000, 2, frameDurationMs: 40);
+        accumulator.Append(MakeStereo(1920), 48000, 2);
+
+        Assert.True(accumulator.TryTakeFrame(out var frame));
+        Assert.Equal(3840, frame.Length);
+    }
+
+    [Fact]
+    public void Rejects_invalid_frame_duration()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new OpusFrameAccumulator(48000, 2, frameDurationMs: 15));
+    }
+
     private static short[] MakeStereo(int framesPerChannel)
     {
         var data = new short[framesPerChannel * 2];

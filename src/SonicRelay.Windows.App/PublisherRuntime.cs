@@ -3,6 +3,7 @@ using SonicRelay.Windows.ApiClient.Devices;
 using SonicRelay.Windows.ApiClient.Sessions;
 using SonicRelay.Windows.ApiClient.WebRtc;
 using SonicRelay.Windows.Audio;
+using SonicRelay.Windows.Core.Audio;
 using SonicRelay.Windows.Core.Configuration;
 using SonicRelay.Windows.Core.Diagnostics;
 using SonicRelay.Windows.Core.Storage;
@@ -28,7 +29,8 @@ public sealed class PublisherRuntime : IAsyncDisposable
         IPeerConnectionManager peers,
         IWebRtcPublisher webRtcPublisher,
         WebRtcAudioBridge audioBridge,
-        RelayPreferenceStore relayPreference)
+        RelayPreferenceStore relayPreference,
+        AudioQualityStore audioQuality)
     {
         this.httpClient = httpClient;
         this.peers = peers;
@@ -37,6 +39,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
         Workflow = workflow;
         BackendBaseUrl = backendBaseUrl;
         RelayPreference = relayPreference;
+        AudioQuality = audioQuality;
         DiagnosticLog = new DiagnosticLog();
         ReportExporter = new DiagnosticReportExporter();
         Workflow.StateChanged += OnWorkflowStateChanged;
@@ -49,6 +52,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
     public PublisherWorkflow Workflow { get; }
     public Uri BackendBaseUrl { get; }
     public RelayPreferenceStore RelayPreference { get; }
+    public AudioQualityStore AudioQuality { get; }
     public DiagnosticLog DiagnosticLog { get; }
     public DiagnosticReportExporter ReportExporter { get; }
     public IWebRtcPublisher WebRtcPublisher => webRtcPublisher;
@@ -75,8 +79,12 @@ public sealed class PublisherRuntime : IAsyncDisposable
         var signaling = new SignalingClient(configuration, tokenStore, [signalingHandlers]);
         var iceServersProvider = new BackendIceServersProvider(new WebRtcApiClient(http, tokenStore));
         var relayPreference = new RelayPreferenceStore();
+        var audioQuality = new AudioQualityStore();
         var peers = new PeerConnectionManager(
-            new SipSorceryPeerConnectionFactory(iceServersProvider, () => relayPreference.ForceRelay),
+            new SipSorceryPeerConnectionFactory(
+                iceServersProvider,
+                () => relayPreference.ForceRelay,
+                () => audioQuality.CurrentProfile),
             new WebRtcPublisherOptions([new WebRtcIceServer(["stun:stun.l.google.com:19302"])]));
         var webRtcPublisher = new WebRtcPublisher(signaling, peers);
         signalingHandlers.Register(webRtcPublisher);
@@ -90,7 +98,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
             signaling,
             audio,
             Environment.MachineName);
-        return new PublisherRuntime(http, workflow, normalized, peers, webRtcPublisher, audioBridge, relayPreference);
+        return new PublisherRuntime(http, workflow, normalized, peers, webRtcPublisher, audioBridge, relayPreference, audioQuality);
     }
 
     private void OnWorkflowStateChanged(PublisherSnapshot state)

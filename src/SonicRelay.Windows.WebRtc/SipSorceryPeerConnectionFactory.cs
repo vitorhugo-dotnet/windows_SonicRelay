@@ -1,4 +1,5 @@
 using SIPSorcery.Net;
+using SonicRelay.Windows.Core.Audio;
 
 namespace SonicRelay.Windows.WebRtc;
 
@@ -11,13 +12,19 @@ namespace SonicRelay.Windows.WebRtc;
 /// </summary>
 public sealed class SipSorceryPeerConnectionFactory(
     IIceServersProvider iceServersProvider,
-    Func<bool>? forceRelay = null) : IWebRtcPeerConnectionFactory
+    Func<bool>? forceRelay = null,
+    Func<AudioQualityProfile>? audioProfile = null) : IWebRtcPeerConnectionFactory
 {
     private readonly IIceServersProvider iceServersProvider =
         iceServersProvider ?? throw new ArgumentNullException(nameof(iceServersProvider));
 
     // Read at creation time so a settings toggle applies to the next viewer.
     private readonly Func<bool> forceRelay = forceRelay ?? (() => false);
+
+    // Read at creation time so the selected audio-quality profile applies to the
+    // next viewer/stream without disrupting connections already in progress.
+    private readonly Func<AudioQualityProfile> audioProfile =
+        audioProfile ?? (() => AudioQualityProfile.Default);
 
     public async Task<IWebRtcPeerConnection> CreateAsync(
         string viewerId,
@@ -29,7 +36,7 @@ public sealed class SipSorceryPeerConnectionFactory(
 
         var servers = await ResolveIceServersAsync(options, cancellationToken).ConfigureAwait(false);
         var configuration = BuildConfiguration(servers, forceRelay());
-        return new SipSorceryPeerConnection(viewerId, new RTCPeerConnection(configuration));
+        return new SipSorceryPeerConnection(viewerId, new RTCPeerConnection(configuration), audioProfile());
     }
 
     /// <summary>

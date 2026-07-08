@@ -2,52 +2,70 @@ using Concentus.Enums;
 using Concentus.Structs;
 using SIPSorcery.Net;
 using SIPSorceryMedia.Abstractions;
+using SonicRelay.Windows.Core.Audio;
 
 namespace SonicRelay.Windows.WebRtc;
 
 /// <summary>
 /// Publisher-side peer connection backed by SIPSorcery: one send-only Opus
-/// 48 kHz stereo audio track per viewer. Trickle ICE — local candidates are
-/// surfaced through <see cref="LocalIceCandidateReady"/> as they gather and
-/// remote ones can be applied at any time after the offer is created.
+/// 48 kHz audio track per viewer, encoded per the selected
+/// <see cref="AudioQualityProfile"/> (channels/bitrate/frame duration). Trickle
+/// ICE — local candidates are surfaced through <see cref="LocalIceCandidateReady"/>
+/// as they gather and remote ones can be applied at any time after the offer.
 /// </summary>
 public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
 {
-    // 20 ms stereo frame at 48 kHz; the accumulator emits exactly this many samples.
-    private const int SamplesPerChannel = 960;
+    private const int SampleRate = 48000;
 
     private readonly RTCPeerConnection connection;
     private readonly OpusEncoder opusEncoder;
-    private readonly OpusFrameAccumulator accumulator = new(48000, 2);
+    private readonly OpusFrameAccumulator accumulator;
     private readonly SemaphoreSlim sendLock = new(1, 1);
     private readonly AudioFormat opusFormat;
     private readonly byte[] encodeBuffer = new byte[4000];
+    // Samples per channel in one frame at 48 kHz; the accumulator emits exactly this.
+    private readonly int samplesPerChannel;
     private volatile bool formatNegotiated;
     private PeerConnectionState state = PeerConnectionState.New;
     private bool disposed;
 
-    public SipSorceryPeerConnection(string viewerId, RTCPeerConnection connection)
+    public SipSorceryPeerConnection(
+        string viewerId,
+        RTCPeerConnection connection,
+        AudioQualityProfile? profile = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(viewerId);
         ViewerId = viewerId;
         this.connection = connection ?? throw new ArgumentNullException(nameof(connection));
 
-        // Advertise Opus for fullband stereo music. Without stereo/bitrate hints the
-        // remote negotiates a low-bitrate mono profile that sounds muffled; the encoder
-        // below is configured to match (music mode, 128 kbps, which drives fullband).
+        var quality = profile ?? AudioQualityProfile.Default;
+        quality.Validate();
+        var channels = quality.Channels;
+        var bitrate = quality.OpusBitrateKbps * 1000;
+        var stereo = channels == 2 ? 1 : 0;
+        samplesPerChannel = SampleRate * quality.FrameDurationMs / 1000;
+        accumulator = new OpusFrameAccumulator(SampleRate, channels, quality.FrameDurationMs);
+
+        // Advertise Opus with explicit channel/bitrate hints. Without the stereo and
+        // maxaveragebitrate fmtp params the remote negotiates a low-bitrate mono
+        // profile that sounds muffled; the encoder below is configured to match.
         opusFormat = new AudioFormat(
             AudioCodecsEnum.OPUS,
             111,
-            48000,
-            2,
-            "useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=128000;maxplaybackrate=48000");
+            SampleRate,
+            channels,
+            $"useinbandfec=1;stereo={stereo};sprop-stereo={stereo};maxaveragebitrate={bitrate};maxplaybackrate=48000");
         this.connection.addTrack(new MediaStreamTrack(opusFormat, MediaStreamStatusEnum.SendOnly));
 
-        opusEncoder = new OpusEncoder(48000, 2, OpusApplication.OPUS_APPLICATION_AUDIO)
+        // Stereo profiles favour music fidelity; mono profiles are tuned for voice.
+        var application = channels == 2
+            ? OpusApplication.OPUS_APPLICATION_AUDIO
+            : OpusApplication.OPUS_APPLICATION_VOIP;
+        opusEncoder = new OpusEncoder(SampleRate, channels, application)
         {
-            Bitrate = 128000,
+            Bitrate = bitrate,
             Complexity = 10,
-            SignalType = OpusSignal.OPUS_SIGNAL_MUSIC,
+            SignalType = channels == 2 ? OpusSignal.OPUS_SIGNAL_MUSIC : OpusSignal.OPUS_SIGNAL_VOICE,
         };
 
         this.connection.OnAudioFormatsNegotiated += OnAudioFormatsNegotiated;
@@ -125,11 +143,11 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
             accumulator.Append(samples, frame.SampleRate, frame.ChannelCount);
             while (accumulator.TryTakeFrame(out var pcm))
             {
-                var length = opusEncoder.Encode(pcm, SamplesPerChannel, encodeBuffer, encodeBuffer.Length);
+                var length = opusEncoder.Encode(pcm, samplesPerChannel, encodeBuffer, encodeBuffer.Length);
                 if (length <= 0) continue;
-                // Opus RTP timestamps advance on the 48 kHz clock: 960 units per
-                // 20 ms frame regardless of the channel count.
-                connection.SendAudio(SamplesPerChannel, encodeBuffer[..length]);
+                // Opus RTP timestamps advance on the 48 kHz clock: samplesPerChannel
+                // units per frame (480/960/1920 for 10/20/40 ms) regardless of channels.
+                connection.SendAudio((uint)samplesPerChannel, encodeBuffer[..length]);
             }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)

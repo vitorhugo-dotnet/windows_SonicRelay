@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../SonicRelay.Windows.Core/SonicRelay.Windows.Core.csproj" />
     <ProjectReference Include="../SonicRelay.Windows.Signaling/SonicRelay.Windows.Signaling.csproj" />
   </ItemGroup>
 

@@ -67,6 +67,31 @@ The Audio capability opens the default Windows render endpoint in WASAPI shared 
 
 Frames use the endpoint's native shared-mode mix format, currently IEEE float 32-bit or PCM 16-bit. Loopback normally yields silence when no application is playing audio. Capture follows the default endpoint selected at start; removing or invalidating that endpoint faults the capture cleanly, after which the user can stop and restart against the current default device. Windows may exclude protected content. This layer does not resample, encode Opus, create WebRTC peers, or transmit audio.
 
+## Audio quality profiles
+
+Captured audio is always encoded with Opus before it leaves over WebRTC; raw
+PCM/Float32 is never sent on the wire. The Audio page exposes a **Stream quality**
+selector so the user can trade bandwidth against fidelity:
+
+| Profile | Channels | Opus bitrate | Frame | Use |
+|---|---|---|---|---|
+| Voice / Economy | Mono | 32 kbps | 20 ms | calls, voice |
+| Balanced | Stereo | 96 kbps | 20 ms | general use |
+| High quality | Stereo | 128 kbps | 20 ms | music, media (default) |
+| Custom | 1–2 | 16–192 kbps | 10/20/40 ms | advanced |
+
+The sample rate stays fixed at 48 kHz for Opus/WebRTC compatibility. WASAPI
+loopback still captures the endpoint's native mix format; the accumulator
+down/upmixes and resamples to the selected channel count and frame size before
+the encoder. The selected profile is persisted per user in
+`%LocalAppData%\SonicRelay\WindowsPublisher\audio-quality.json` (via
+`AudioQualityStore`) and restored on startup. It is read when each viewer's peer
+connection is created, so a change applies to the next stream; the selector is
+disabled while capture is running and a hint asks the user to restart capture to
+apply a different profile. The page shows the effective codec settings (codec,
+bitrate, channels, frame duration, sample rate) and an approximate traffic
+estimate (kbps, MB/min, MB/hour) derived from the Opus bitrate.
+
 ## Non-admin requirement
 
 The Windows Publisher must install, configure, and run as a standard Windows user without elevation. Its normal operation must not depend on an administrator-approved installer, Windows service, custom audio driver, kernel-mode component, machine-wide runtime, inbound firewall rule, HKLM configuration, or runtime writes to protected locations such as Program Files.

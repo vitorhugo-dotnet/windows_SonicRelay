@@ -1,43 +1,50 @@
 namespace SonicRelay.Windows.WebRtc;
 
 /// <summary>
-/// Buffers ragged capture packets and emits exact 20 ms frames at the encoder's
-/// target rate/channel layout (960 samples per channel at 48 kHz). Handles
-/// mono/stereo up- and down-mixing and linear resampling of arbitrary common
-/// source rates (44.1 kHz WASAPI mixes in particular). Not thread-safe; callers
-/// serialize access.
+/// Buffers ragged capture packets and emits exact frames of the configured
+/// duration (default 20 ms → 960 samples per channel at 48 kHz) at the encoder's
+/// target rate/channel layout. Handles mono/stereo up- and down-mixing and linear
+/// resampling of arbitrary common source rates (44.1 kHz WASAPI mixes in
+/// particular). Not thread-safe; callers serialize access.
 /// </summary>
 public sealed class OpusFrameAccumulator
 {
     private readonly int targetSampleRate;
     private readonly int targetChannels;
+    private readonly int frameDurationMs;
     private readonly List<short> buffer = [];
     private int sourceSampleRate;
-    private int samplesPer20MsPerChannel;
+    private int sourceSamplesPerFramePerChannel;
 
-    public OpusFrameAccumulator(int targetSampleRate = 48000, int targetChannels = 2)
+    public OpusFrameAccumulator(int targetSampleRate = 48000, int targetChannels = 2, int frameDurationMs = 20)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetSampleRate);
         if (targetChannels is < 1 or > 2) throw new ArgumentOutOfRangeException(nameof(targetChannels));
+        if (frameDurationMs is not (10 or 20 or 40))
+            throw new ArgumentOutOfRangeException(nameof(frameDurationMs), "Frame duration must be 10, 20, or 40 ms.");
         this.targetSampleRate = targetSampleRate;
         this.targetChannels = targetChannels;
+        this.frameDurationMs = frameDurationMs;
     }
 
-    public int TargetFrameSize => targetSampleRate / 50 * targetChannels;
+    private int TargetSamplesPerFramePerChannel => targetSampleRate * frameDurationMs / 1000;
+
+    public int TargetFrameSize => TargetSamplesPerFramePerChannel * targetChannels;
 
     /// <summary>Appends interleaved S16 samples captured at the given rate/channel count.</summary>
     public void Append(ReadOnlySpan<short> samples, int sampleRate, int channelCount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sampleRate);
-        if (sampleRate % 50 != 0)
-            throw new ArgumentException("Sample rate must be divisible by 50 to form 20 ms frames.", nameof(sampleRate));
+        if (sampleRate * frameDurationMs % 1000 != 0)
+            throw new ArgumentException(
+                $"Sample rate must yield a whole number of samples per {frameDurationMs} ms frame.", nameof(sampleRate));
         if (channelCount is < 1 or > 2) throw new ArgumentOutOfRangeException(nameof(channelCount));
         if (sampleRate != sourceSampleRate)
         {
             // Source format changed (e.g. new default device); drop stale samples.
             buffer.Clear();
             sourceSampleRate = sampleRate;
-            samplesPer20MsPerChannel = sampleRate / 50;
+            sourceSamplesPerFramePerChannel = sampleRate * frameDurationMs / 1000;
         }
 
         if (channelCount == targetChannels)
@@ -69,7 +76,7 @@ public sealed class OpusFrameAccumulator
     {
         frame = [];
         if (sourceSampleRate == 0) return false;
-        var neededSourceSamples = samplesPer20MsPerChannel * targetChannels;
+        var neededSourceSamples = sourceSamplesPerFramePerChannel * targetChannels;
         if (buffer.Count < neededSourceSamples) return false;
 
         var source = buffer.GetRange(0, neededSourceSamples).ToArray();
@@ -81,7 +88,8 @@ public sealed class OpusFrameAccumulator
             return true;
         }
 
-        frame = ResampleInterleaved(source, samplesPer20MsPerChannel, targetSampleRate / 50, targetChannels);
+        frame = ResampleInterleaved(
+            source, sourceSamplesPerFramePerChannel, TargetSamplesPerFramePerChannel, targetChannels);
         return true;
     }
 

@@ -1,6 +1,7 @@
 using Concentus.Enums;
 using Concentus.Structs;
 using SIPSorcery.Net;
+using SonicRelay.Windows.Core.Audio;
 using SonicRelay.Windows.WebRtc;
 
 namespace SonicRelay.Windows.WebRtc.Tests;
@@ -46,6 +47,20 @@ public sealed class SipSorceryPeerConnectionTests
         // muffled low-bitrate mono Opus stream.
         Assert.Contains("stereo=1", offer.Sdp, StringComparison.Ordinal);
         Assert.Contains("maxaveragebitrate=128000", offer.Sdp, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Voice_profile_offers_mono_opus_at_its_bitrate()
+    {
+        await using var peer = new SipSorceryPeerConnection(
+            "viewer-1", new RTCPeerConnection(new RTCConfiguration()), AudioQualityProfile.Voice);
+
+        var offer = await peer.CreateOfferAsync();
+
+        Assert.Contains("OPUS", offer.Sdp, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("stereo=0", offer.Sdp, StringComparison.Ordinal);
+        // Voice preset is 32 kbps.
+        Assert.Contains("maxaveragebitrate=32000", offer.Sdp, StringComparison.Ordinal);
     }
 
     [Fact]
