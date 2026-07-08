@@ -12,6 +12,12 @@ public partial class App : Application
     public PublisherRuntime? Runtime => runtime;
     public event Action<PublisherRuntime?>? RuntimeChanged;
 
+    /// <summary>
+    /// App-global background/tray preferences (issue #26). These are independent of
+    /// the configured backend, so they live on the app rather than the runtime.
+    /// </summary>
+    public TrayBackgroundPreferenceStore TrayPreferences { get; } = new();
+
     public App()
     {
         InitializeComponent();
@@ -21,6 +27,13 @@ public partial class App : Application
     {
         _window = new MainWindow();
         _window.Activate();
+        // "Start minimized to tray": keep the process running but never surface the
+        // window on launch. Only honoured when the app is allowed to live in the tray.
+        if (TrayPreferences.StartMinimized && TrayPreferences.KeepRunningInTray && _window is MainWindow main)
+        {
+            main.HideToTrayOnStartup();
+        }
+
         _ = LoadConfiguredRuntimeAsync();
     }
 

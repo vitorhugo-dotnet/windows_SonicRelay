@@ -171,6 +171,25 @@ public sealed class PublisherWorkflow : IAsyncDisposable
     public Task RefreshViewerCountAsync(CancellationToken cancellationToken = default) =>
         State.SessionId is null ? Task.CompletedTask : ExecuteAsync(RefreshViewerCountCoreAsync, cancellationToken);
 
+    /// <summary>
+    /// Re-establishes signaling for the current session without recreating the
+    /// session or device, so the tray "Reconnect signaling" action never spawns a
+    /// duplicate session. No-op guard when there is no active session.
+    /// </summary>
+    public Task ReconnectSignalingAsync(CancellationToken cancellationToken = default)
+    {
+        if (State.SessionId is null || State.DeviceId is null)
+            return SetValidationErrorAsync("There is no active session to reconnect.");
+        return ExecuteAsync(async token =>
+        {
+            var sessionId = State.SessionId.Value;
+            var deviceId = State.DeviceId.Value;
+            await signaling.CloseAsync(token);
+            await signaling.ConnectAsync(sessionId.ToString("D"), deviceId.ToString("D"), token);
+            await RefreshViewerCountCoreAsync(token);
+        }, cancellationToken);
+    }
+
     public Task StartAudioAsync(CancellationToken cancellationToken = default)
     {
         if (State.SessionId is null || State.SignalingState != SignalingConnectionState.Connected)

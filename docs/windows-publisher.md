@@ -119,6 +119,55 @@ track is out of scope for now; a single output endpoint is captured. The capture
 layer is kept isolated so per-application or multi-device filtering can be added
 later without reworking the WebRTC/Opus path.
 
+## Background run and system tray
+
+The publisher keeps running when the main window is minimized or closed, so audio
+publishing (signaling + WebRTC + capture) survives with the window hidden. The
+publisher pipeline is owned by the app (`App.Runtime`), not the window, so hiding
+the window never tears it down — only an explicit **Quit** does.
+
+The behaviour is driven by `TrayApplicationController` (a pure, unit-tested decision
+core in `SonicRelay.Windows.Presentation`) wired to three isolated App-layer
+services: `ITrayIconService` (Win32 `Shell_NotifyIcon`), `IAppLifetimeService`
+(hide/show/quit over `AppWindow`), and `IBackgroundNotifier` (tray balloon toasts).
+The streaming/audio/WebRTC layers never depend on any of these.
+
+- **Close / minimize** hide the window to the notification area when *Keep running in
+  tray* is on, or whenever a stream is active (so closing the window mid-stream never
+  drops viewers). With the setting off and no active stream, closing quits normally.
+- **Tray menu** (right-click): Open SonicRelay, a status header, Start/Stop stream,
+  Copy session code (only with a code), Reconnect signaling (only when disconnected
+  with a session), and Quit SonicRelay. Double-click restores and focuses the window.
+- **Quit** disposes audio → WebRTC → signaling, removes the tray icon, and exits.
+- **Notifications** (gated by the *Show background/tray notifications* setting) fire
+  for minimized-to-tray (first time), stream start/stop, and viewer connect/disconnect
+  — only while the window is hidden, and never during normal reconnect churn.
+
+Settings live on the **Settings** page and persist per user in
+`%LocalAppData%\SonicRelay\WindowsPublisher\tray.json`
+(`TrayBackgroundPreferenceStore`): *Keep running in tray* (default on),
+*Start minimized to tray* (default off), *Show notifications* (default on). A
+missing/corrupt file falls back to defaults.
+
+No admin, no driver, no Windows Service, and no local listening port are required;
+the tray uses only user-level shell interop.
+
+### Manual QA
+
+1. Start a stream, then **minimize** — the window hides to the tray and the stream
+   keeps running (verify the viewer stays connected).
+2. **Close** the window during an active stream — the app stays alive in the tray;
+   a first-time notification explains it is still running.
+3. Right-click the tray icon — the menu shows the current status and **Stop stream**;
+   pick it and confirm capture stops.
+4. **Double-click** the tray icon (or **Open SonicRelay**) — the window restores and
+   focuses, showing the correct current session/signaling/audio state.
+5. **Copy session code** from the tray and paste it elsewhere to confirm the clipboard.
+6. Disconnect the network briefly and use **Reconnect signaling** from the tray.
+7. **Quit SonicRelay** from the tray — audio, WebRTC peer connections, and signaling
+   close, the tray icon disappears, and the process exits. No duplicate device or
+   session was created by hiding/restoring.
+
 ## Non-admin requirement
 
 The Windows Publisher must install, configure, and run as a standard Windows user without elevation. Its normal operation must not depend on an administrator-approved installer, Windows service, custom audio driver, kernel-mode component, machine-wide runtime, inbound firewall rule, HKLM configuration, or runtime writes to protected locations such as Program Files.

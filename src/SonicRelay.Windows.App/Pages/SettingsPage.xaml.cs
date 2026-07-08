@@ -30,8 +30,12 @@ public sealed partial class SettingsPage : Page
     {
         var runtime = App.CurrentApp.Runtime;
         RelayToggle.IsEnabled = runtime is not null;
+        var tray = App.CurrentApp.TrayPreferences;
         suppressToggle = true;
         RelayToggle.IsOn = runtime?.RelayPreference.ForceRelay ?? false;
+        KeepInTrayToggle.IsOn = tray.KeepRunningInTray;
+        StartMinimizedToggle.IsOn = tray.StartMinimized;
+        NotificationsToggle.IsOn = tray.ShowNotifications;
         suppressToggle = false;
     }
 
@@ -41,5 +45,12 @@ public sealed partial class SettingsPage : Page
         var runtime = App.CurrentApp.Runtime;
         if (runtime is null) return;
         await runtime.RelayPreference.SetForceRelayAsync(RelayToggle.IsOn);
+    }
+
+    private async void TrayToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (suppressToggle) return;
+        await App.CurrentApp.TrayPreferences.UpdateAsync(
+            KeepInTrayToggle.IsOn, StartMinimizedToggle.IsOn, NotificationsToggle.IsOn);
     }
 }

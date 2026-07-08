@@ -229,6 +229,31 @@ public sealed class PublisherWorkflowTests
         Assert.Null(fixture.Workflow.State.ErrorMessage);
     }
 
+    [Fact]
+    public async Task ReconnectSignalingRejectsWithoutAnActiveSession()
+    {
+        await using var fixture = new Fixture();
+
+        await fixture.Workflow.ReconnectSignalingAsync();
+
+        Assert.Equal("There is no active session to reconnect.", fixture.Workflow.State.ErrorMessage);
+        Assert.False(fixture.Signaling.CloseCalled);
+    }
+
+    [Fact]
+    public async Task ReconnectSignalingReconnectsTheActiveSession()
+    {
+        await using var fixture = new Fixture();
+        await fixture.Workflow.RegisterAsync("user@example.com", "password", "password");
+        await fixture.Workflow.CreateSessionAsync();
+
+        await fixture.Workflow.ReconnectSignalingAsync();
+
+        Assert.True(fixture.Signaling.CloseCalled);
+        Assert.Equal(SignalingConnectionState.Connected, fixture.Workflow.State.SignalingState);
+        Assert.Equal(fixture.Sessions.Created.Id.ToString("D"), fixture.Signaling.SessionId);
+    }
+
     private static DeviceResponse Device(string name, bool revoked) =>
         new(Guid.NewGuid(), name, "windows_publisher", "windows", null, true, revoked, null, DateTimeOffset.UtcNow);
 
