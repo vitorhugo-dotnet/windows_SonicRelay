@@ -1,4 +1,5 @@
-using SIPSorcery.Media;
+using Concentus.Enums;
+using Concentus.Structs;
 using SIPSorcery.Net;
 using SIPSorceryMedia.Abstractions;
 
@@ -12,12 +13,15 @@ namespace SonicRelay.Windows.WebRtc;
 /// </summary>
 public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
 {
+    // 20 ms stereo frame at 48 kHz; the accumulator emits exactly this many samples.
+    private const int SamplesPerChannel = 960;
+
     private readonly RTCPeerConnection connection;
-    private readonly AudioEncoder encoder = new(includeOpus: true);
+    private readonly OpusEncoder opusEncoder;
     private readonly OpusFrameAccumulator accumulator = new(48000, 2);
     private readonly SemaphoreSlim sendLock = new(1, 1);
     private readonly AudioFormat opusFormat;
-    private AudioFormat negotiatedFormat;
+    private readonly byte[] encodeBuffer = new byte[4000];
     private volatile bool formatNegotiated;
     private PeerConnectionState state = PeerConnectionState.New;
     private bool disposed;
@@ -28,10 +32,23 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
         ViewerId = viewerId;
         this.connection = connection ?? throw new ArgumentNullException(nameof(connection));
 
-        opusFormat = encoder.SupportedFormats.Single(format =>
-            string.Equals(format.FormatName, "OPUS", StringComparison.OrdinalIgnoreCase));
-        negotiatedFormat = opusFormat;
+        // Advertise Opus for fullband stereo music. Without stereo/bitrate hints the
+        // remote negotiates a low-bitrate mono profile that sounds muffled; the encoder
+        // below is configured to match (music mode, 128 kbps, which drives fullband).
+        opusFormat = new AudioFormat(
+            AudioCodecsEnum.OPUS,
+            111,
+            48000,
+            2,
+            "useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=128000;maxplaybackrate=48000");
         this.connection.addTrack(new MediaStreamTrack(opusFormat, MediaStreamStatusEnum.SendOnly));
+
+        opusEncoder = new OpusEncoder(48000, 2, OpusApplication.OPUS_APPLICATION_AUDIO)
+        {
+            Bitrate = 128000,
+            Complexity = 10,
+            SignalType = OpusSignal.OPUS_SIGNAL_MUSIC,
+        };
 
         this.connection.OnAudioFormatsNegotiated += OnAudioFormatsNegotiated;
         this.connection.onicecandidate += OnIceCandidate;
@@ -108,11 +125,11 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
             accumulator.Append(samples, frame.SampleRate, frame.ChannelCount);
             while (accumulator.TryTakeFrame(out var pcm))
             {
-                var encoded = encoder.EncodeAudio(pcm, negotiatedFormat);
-                if (encoded.Length == 0) continue;
+                var length = opusEncoder.Encode(pcm, SamplesPerChannel, encodeBuffer, encodeBuffer.Length);
+                if (length <= 0) continue;
                 // Opus RTP timestamps advance on the 48 kHz clock: 960 units per
                 // 20 ms frame regardless of the channel count.
-                connection.SendAudio(960, encoded);
+                connection.SendAudio(SamplesPerChannel, encodeBuffer[..length]);
             }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -127,11 +144,10 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
 
     private void OnAudioFormatsNegotiated(List<AudioFormat> formats)
     {
-        var opus = formats.FirstOrDefault(format =>
-            string.Equals(format.FormatName, "OPUS", StringComparison.OrdinalIgnoreCase));
-        if (!opus.IsEmpty())
+        // Gate sending until the remote has accepted Opus; we always encode Opus
+        // ourselves, so only the fact of negotiation matters, not the returned format.
+        if (formats.Any(format => string.Equals(format.FormatName, "OPUS", StringComparison.OrdinalIgnoreCase)))
         {
-            negotiatedFormat = opus;
             formatNegotiated = true;
         }
     }
@@ -212,7 +228,6 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
         {
             // Closing an already-failed transport must not throw out of dispose.
         }
-        encoder.Dispose();
         sendLock.Dispose();
     }
 }
