@@ -39,6 +39,38 @@ public sealed class UserConfigurationLoaderTests : IDisposable
         await Assert.ThrowsAsync<ConfigurationValidationException>(() => new UserConfigurationLoader(path).LoadAsync());
     }
 
+    [Fact]
+    public async Task SaveBackendPersistsUrlAndDerivedSignalingForTheNextLaunch()
+    {
+        var path = Path.Combine(_directory, "appsettings.json");
+        var loader = new UserConfigurationLoader(path);
+
+        await loader.SaveBackendAsync(new Uri("https://api.example.test"));
+
+        var result = await loader.LoadAsync();
+        Assert.Equal(new Uri("https://api.example.test/"), result.BackendBaseUrl);
+        Assert.Equal(new Uri("wss://api.example.test/ws/signaling"), result.SignalingBaseUrl);
+    }
+
+    [Fact]
+    public async Task SaveBackendPreservesOtherExistingSettings()
+    {
+        Directory.CreateDirectory(_directory);
+        var path = Path.Combine(_directory, "appsettings.json");
+        await File.WriteAllTextAsync(path, """
+            {"backendBaseUrl":"https://localhost:5001/","signalingBaseUrl":"wss://localhost:5001/ws/signaling","defaultMaxViewers":7,"developmentMode":true}
+            """);
+        var loader = new UserConfigurationLoader(path);
+
+        await loader.SaveBackendAsync(new Uri("http://relay.example.test/"));
+
+        var result = await loader.LoadAsync();
+        Assert.Equal(new Uri("http://relay.example.test/"), result.BackendBaseUrl);
+        Assert.Equal(new Uri("ws://relay.example.test/ws/signaling"), result.SignalingBaseUrl);
+        Assert.Equal(7, result.DefaultMaxViewers);
+        Assert.True(result.DevelopmentMode);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, true);

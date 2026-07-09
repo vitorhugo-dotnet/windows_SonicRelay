@@ -187,6 +187,37 @@ public sealed class PublisherWorkflowTests
     }
 
     [Fact]
+    public async Task RejectedCredentialsBlameTheCredentials()
+    {
+        await using var fixture = new Fixture();
+        fixture.Auth.Exception = new ApiClientException(ApiErrorKind.Unauthorized, "Unauthorized.");
+
+        await fixture.Workflow.LoginAsync("user@example.com", "wrong");
+
+        Assert.False(fixture.Workflow.State.IsAuthenticated);
+        Assert.Equal("Login failed. Check your email and password.", fixture.Workflow.State.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ExpiredSessionAfterSignInDropsAuthInsteadOfClaimingLoginFailure()
+    {
+        await using var fixture = new Fixture();
+        await fixture.Workflow.LoginAsync("user@example.com", "password");
+        Assert.True(fixture.Workflow.State.IsAuthenticated);
+
+        // The refresh token died between sign-in and the next call: the 401 that
+        // survives the HTTP layer's refresh retry must not read as a credential
+        // failure while the UI still shows the signed-in email.
+        fixture.Sessions.CreateException = new ApiClientException(ApiErrorKind.Unauthorized, "Unauthorized.");
+        await fixture.Workflow.CreateSessionAsync();
+
+        Assert.Equal("Your session expired. Sign in again.", fixture.Workflow.State.ErrorMessage);
+        Assert.False(fixture.Workflow.State.IsAuthenticated);
+        Assert.Null(fixture.Workflow.State.UserEmail);
+        Assert.Null(fixture.Workflow.State.DeviceId);
+    }
+
+    [Fact]
     public async Task RestoreSessionAuthenticatesAndReusesExistingDevice()
     {
         await using var fixture = new Fixture();
@@ -331,7 +362,11 @@ public sealed class PublisherWorkflowTests
     {
         public StreamSessionResponse Created { get; } = new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "active", 4, DateTimeOffset.UtcNow.AddMinutes(5), DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow, "ABC123");
         public Guid? EndedId { get; private set; }
-        public Task<StreamSessionResponse> CreateSessionAsync(CreateSessionRequest request, CancellationToken cancellationToken = default) => Task.FromResult(Created with { SourceDeviceId = request.SourceDeviceId });
+        public Exception? CreateException { get; set; }
+        public Task<StreamSessionResponse> CreateSessionAsync(CreateSessionRequest request, CancellationToken cancellationToken = default) =>
+            CreateException is null
+                ? Task.FromResult(Created with { SourceDeviceId = request.SourceDeviceId })
+                : Task.FromException<StreamSessionResponse>(CreateException);
         public Task<IReadOnlyList<ActiveSessionResponse>> GetActiveSessionsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ActiveSessionResponse>>([]);
         public Task<StreamSessionResponse> EndSessionAsync(Guid sessionId, CancellationToken cancellationToken = default)
         {

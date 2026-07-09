@@ -34,6 +34,13 @@ public sealed partial class ConnectionPage : Page
         if (workflow is not null) workflow.StateChanged -= OnStateChanged;
         workflow = runtime?.Workflow;
         if (workflow is not null) workflow.StateChanged += OnStateChanged;
+        // Reflect the backend actually configured (persisted across launches) so a
+        // returning user signs in against their server, not the XAML placeholder.
+        // The first-run template points at localhost — keep the placeholder then.
+        if (runtime is not null && !runtime.BackendBaseUrl.IsLoopback)
+        {
+            BackendUrlBox.Text = runtime.BackendBaseUrl.AbsoluteUri;
+        }
         Render(workflow?.State);
     }
 
@@ -43,7 +50,9 @@ public sealed partial class ConnectionPage : Page
         if (!TryGetBackend(out var backend)) return;
         try
         {
-            await App.CurrentApp.ConfigureBackendAsync(backend);
+            // Skip the automatic session restore: this click signs in explicitly,
+            // and racing the two used to surface confusing auth-state errors.
+            await App.CurrentApp.ConfigureBackendAsync(backend, restoreSession: false);
             await App.CurrentApp.Runtime!.Workflow.LoginAsync(EmailBox.Text, PasswordBox.Password);
             PasswordBox.Password = string.Empty;
         }
@@ -80,7 +89,7 @@ public sealed partial class ConnectionPage : Page
         try
         {
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-            await App.CurrentApp.ConfigureBackendAsync(backend);
+            await App.CurrentApp.ConfigureBackendAsync(backend, restoreSession: false);
             await App.CurrentApp.Runtime!.Workflow.RegisterAsync(
                 emailBox.Text, passwordBox.Password, confirmBox.Password);
             EmailBox.Text = emailBox.Text;

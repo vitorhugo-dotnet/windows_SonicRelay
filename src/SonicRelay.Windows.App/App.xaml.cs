@@ -37,16 +37,32 @@ public partial class App : Application
         _ = LoadConfiguredRuntimeAsync();
     }
 
-    public async Task ConfigureBackendAsync(Uri backendBaseUrl)
+    /// <summary>
+    /// Swaps the active runtime for one pointed at <paramref name="backendBaseUrl"/>
+    /// and persists that URL so the next launch restores the session against the
+    /// same backend (instead of the localhost template written on first run).
+    /// Set <paramref name="restoreSession"/> to false when the caller signs in
+    /// immediately afterwards — running the startup restore concurrently with an
+    /// explicit login is redundant and the two used to race for the workflow lock.
+    /// </summary>
+    public async Task ConfigureBackendAsync(Uri backendBaseUrl, bool restoreSession = true)
     {
         var replacement = PublisherRuntime.Create(backendBaseUrl);
         var previous = runtime;
         runtime = replacement;
         RuntimeChanged?.Invoke(runtime);
         if (previous is not null) await previous.DisposeAsync();
+        try
+        {
+            await new UserConfigurationLoader().SaveBackendAsync(backendBaseUrl);
+        }
+        catch
+        {
+            // Persisting the backend is best-effort; the session still works.
+        }
         // Restore a persisted session (refresh + /auth/me) so the user stays signed
         // in across restarts. Non-blocking; the UI reacts to workflow StateChanged.
-        _ = replacement.Workflow.RestoreSessionAsync();
+        if (restoreSession) _ = replacement.Workflow.RestoreSessionAsync();
     }
 
     public async Task DisposeRuntimeAsync()

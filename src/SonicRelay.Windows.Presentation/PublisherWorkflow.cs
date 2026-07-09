@@ -16,6 +16,7 @@ public sealed class PublisherWorkflow : IAsyncDisposable
     private readonly IAudioCaptureService audio;
     private readonly string deviceName;
     private readonly SemaphoreSlim operationLock = new(1, 1);
+    private readonly object stateLock = new();
     private bool disposed;
 
     public PublisherWorkflow(
@@ -45,7 +46,12 @@ public sealed class PublisherWorkflow : IAsyncDisposable
     {
         if (string.IsNullOrWhiteSpace(email)) return SetValidationErrorAsync("Email is required.");
         if (string.IsNullOrWhiteSpace(password)) return SetValidationErrorAsync("Password is required.");
-        return ExecuteAsync(token => SignInAndPrepareDeviceAsync(email.Trim(), password, token), cancellationToken);
+        // Only an explicit sign-in may blame the credentials; every other
+        // operation's 401 means the stored session expired (see ExecuteAsync).
+        return ExecuteAsync(
+            token => SignInAndPrepareDeviceAsync(email.Trim(), password, token),
+            cancellationToken,
+            unauthorizedMessage: "Login failed. Check your email and password.");
     }
 
     public Task RegisterAsync(string email, string password, string confirmPassword, CancellationToken cancellationToken = default)
@@ -65,7 +71,7 @@ public sealed class PublisherWorkflow : IAsyncDisposable
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 var message = ToRegisterFriendlyMessage(exception);
-                SetState(State with { ErrorMessage = message }, $"Registration failed: {message}");
+                SetState(state => state with { ErrorMessage = message }, $"Registration failed: {message}");
                 return;
             }
 
@@ -78,7 +84,7 @@ public sealed class PublisherWorkflow : IAsyncDisposable
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 SetState(
-                    State with { ErrorMessage = "Account created. Please sign in with your new email and password." },
+                    state => state with { ErrorMessage = "Account created. Please sign in with your new email and password." },
                     "Account created, but automatic sign-in failed.");
             }
         }, cancellationToken);
@@ -103,13 +109,13 @@ public sealed class PublisherWorkflow : IAsyncDisposable
             {
                 // No stored session, or the refresh token is no longer valid.
                 try { await auth.LogoutAsync(token); } catch { }
-                SetState(new PublisherSnapshot { AudioDiagnostics = audio.Diagnostics });
+                SetState(_ => new PublisherSnapshot { AudioDiagnostics = audio.Diagnostics });
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 // Backend/network unreachable at startup: stay signed out without an
                 // alarming banner; the user can retry once connectivity returns.
-                SetState(new PublisherSnapshot { AudioDiagnostics = audio.Diagnostics });
+                SetState(_ => new PublisherSnapshot { AudioDiagnostics = audio.Diagnostics });
             }
         }, cancellationToken);
 
@@ -135,7 +141,7 @@ public sealed class PublisherWorkflow : IAsyncDisposable
             && !item.Revoked
             && string.Equals(item.Name, deviceName, StringComparison.Ordinal))
             ?? await devices.RegisterWindowsPublisherAsync(new RegisterDeviceRequest(deviceName, null), cancellationToken);
-        SetState(State with
+        SetState(state => state with
         {
             IsAuthenticated = true,
             UserDisplayName = user.DisplayName ?? user.Email,
@@ -153,7 +159,7 @@ public sealed class PublisherWorkflow : IAsyncDisposable
         return ExecuteAsync(async token =>
         {
             var session = await sessions.CreateSessionAsync(new CreateSessionRequest(State.DeviceId.Value), token);
-            SetState(State with { SessionId = session.Id, SessionCode = session.Code, ViewerCount = 0 }, "Session created.");
+            SetState(state => state with { SessionId = session.Id, SessionCode = session.Code, ViewerCount = 0 }, "Session created.");
             try
             {
                 await signaling.ConnectAsync(session.Id.ToString("D"), State.DeviceId.Value.ToString("D"), token);
@@ -162,7 +168,7 @@ public sealed class PublisherWorkflow : IAsyncDisposable
             catch
             {
                 try { await sessions.EndSessionAsync(session.Id, CancellationToken.None); } catch { }
-                SetState(State with { SessionId = null, SessionCode = null, ViewerCount = 0 });
+                SetState(state => state with { SessionId = null, SessionCode = null, ViewerCount = 0 });
                 throw;
             }
         }, cancellationToken);
@@ -209,7 +215,7 @@ public sealed class PublisherWorkflow : IAsyncDisposable
             if (audio.State is not AudioCaptureState.Stopped) await audio.StopAsync(token);
             await signaling.CloseAsync(token);
             await sessions.EndSessionAsync(sessionId, token);
-            SetState(State with { SessionId = null, SessionCode = null, ViewerCount = 0 }, "Session ended.");
+            SetState(state => state with { SessionId = null, SessionCode = null, ViewerCount = 0 }, "Session ended.");
         }, cancellationToken);
     }
 
@@ -225,7 +231,7 @@ public sealed class PublisherWorkflow : IAsyncDisposable
                 try { await sessions.EndSessionAsync(sessionId, token); } catch { }
             }
             await auth.LogoutAsync(token);
-            SetState(new PublisherSnapshot { AudioDiagnostics = audio.Diagnostics }, "Signed out.");
+            SetState(_ => new PublisherSnapshot { AudioDiagnostics = audio.Diagnostics }, "Signed out.");
         }, cancellationToken);
 
     private async Task RefreshViewerCountCoreAsync(CancellationToken cancellationToken)
@@ -233,44 +239,73 @@ public sealed class PublisherWorkflow : IAsyncDisposable
         if (State.SessionId is not { } id) return;
         var active = await sessions.GetActiveSessionsAsync(cancellationToken);
         var current = active.FirstOrDefault(item => item.Id == id);
-        SetState(State with { ViewerCount = current?.ViewerCount ?? 0 });
+        SetState(state => state with { ViewerCount = current?.ViewerCount ?? 0 });
     }
 
-    private async Task ExecuteAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken)
+    /// <summary>
+    /// Serializes an operation, publishing busy/error state around it.
+    /// <paramref name="unauthorizedMessage"/> is the message shown when the
+    /// operation fails with <see cref="ApiErrorKind.Unauthorized"/>; only the
+    /// explicit sign-in passes one. For every other operation a surviving 401
+    /// (the HTTP layer already retried with the refresh token) means the
+    /// stored session is gone, so local auth state is dropped too — the UI
+    /// must never claim "login failed" while still showing the account as
+    /// signed in.
+    /// </summary>
+    private async Task ExecuteAsync(
+        Func<CancellationToken, Task> operation,
+        CancellationToken cancellationToken,
+        string? unauthorizedMessage = null)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         await operationLock.WaitAsync(cancellationToken);
         try
         {
-            SetState(State with { IsBusy = true, ErrorMessage = null });
+            SetState(state => state with { IsBusy = true, ErrorMessage = null });
             await operation(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            SetState(State with { ErrorMessage = "The operation was cancelled." });
+            SetState(state => state with { ErrorMessage = "The operation was cancelled." });
         }
         catch (Exception exception)
         {
-            SetState(State with { ErrorMessage = ToFriendlyMessage(exception) }, $"Error: {ToFriendlyMessage(exception)}");
+            var message = ToFriendlyMessage(exception, unauthorizedMessage);
+            if (unauthorizedMessage is null && exception is ApiClientException { Kind: ApiErrorKind.Unauthorized })
+            {
+                SetState(state => state with
+                {
+                    IsAuthenticated = false,
+                    UserDisplayName = null,
+                    UserEmail = null,
+                    DeviceId = null,
+                    DeviceName = null,
+                    ErrorMessage = message
+                }, $"Error: {message}");
+            }
+            else
+            {
+                SetState(state => state with { ErrorMessage = message }, $"Error: {message}");
+            }
         }
         finally
         {
-            SetState(State with { IsBusy = false });
+            SetState(state => state with { IsBusy = false });
             operationLock.Release();
         }
     }
 
     private Task SetValidationErrorAsync(string message)
     {
-        SetState(State with { ErrorMessage = message }, $"Validation: {message}");
+        SetState(state => state with { ErrorMessage = message }, $"Validation: {message}");
         return Task.CompletedTask;
     }
 
-    private static string ToFriendlyMessage(Exception exception) => exception switch
+    private static string ToFriendlyMessage(Exception exception, string? unauthorizedMessage) => exception switch
     {
         ApiClientException api => api.Kind switch
         {
-            ApiErrorKind.Unauthorized => "Login failed. Check your email and password.",
+            ApiErrorKind.Unauthorized => unauthorizedMessage ?? "Your session expired. Sign in again.",
             ApiErrorKind.NetworkUnavailable => "The backend network is unavailable. Check the URL and connection.",
             ApiErrorKind.BackendUnavailable => "The backend is unavailable. Try again shortly.",
             _ => api.Message
@@ -301,20 +336,34 @@ public sealed class PublisherWorkflow : IAsyncDisposable
 
     private static bool Mentions(string value, string term) => value.Contains(term, StringComparison.OrdinalIgnoreCase);
 
-    private void OnSignalingStateChanged(SignalingConnectionState state) => SetState(State with { SignalingState = state }, $"Signaling: {state}.");
-    private void OnAudioStateChanged(AudioCaptureState state) => SetState(State with { AudioState = state, AudioDiagnostics = audio.Diagnostics });
-    private void OnAudioLevelChanged(AudioLevelSnapshot _) => SetState(State with { AudioDiagnostics = audio.Diagnostics });
+    private void OnSignalingStateChanged(SignalingConnectionState state) => SetState(current => current with { SignalingState = state }, $"Signaling: {state}.");
+    private void OnAudioStateChanged(AudioCaptureState state) => SetState(current => current with { AudioState = state, AudioDiagnostics = audio.Diagnostics });
+    private void OnAudioLevelChanged(AudioLevelSnapshot _) => SetState(current => current with { AudioDiagnostics = audio.Diagnostics });
 
-    private void AddLog(string message) => SetState(State, message);
+    private void AddLog(string message) => SetState(state => state, message);
 
-    private void SetState(PublisherSnapshot next, string? logMessage = null)
+    /// <summary>
+    /// Applies <paramref name="update"/> to the current snapshot atomically.
+    /// Signaling and audio events fire from background threads while workflow
+    /// operations mutate state, so the read-modify-write must happen under a
+    /// lock — otherwise a concurrent event can publish a snapshot captured
+    /// before an operation's write and silently revert it (the classic
+    /// symptom was IsAuthenticated flipping back to false right after a
+    /// successful sign-in).
+    /// </summary>
+    private void SetState(Func<PublisherSnapshot, PublisherSnapshot> update, string? logMessage = null)
     {
-        if (logMessage is not null)
+        PublisherSnapshot next;
+        lock (stateLock)
         {
-            var logs = next.ActivityLog.Append($"{DateTimeOffset.Now:HH:mm:ss} {logMessage}").TakeLast(100).ToArray();
-            next = next with { ActivityLog = logs };
+            next = update(State);
+            if (logMessage is not null)
+            {
+                var logs = next.ActivityLog.Append($"{DateTimeOffset.Now:HH:mm:ss} {logMessage}").TakeLast(100).ToArray();
+                next = next with { ActivityLog = logs };
+            }
+            State = next;
         }
-        State = next;
         StateChanged?.Invoke(next);
     }
 

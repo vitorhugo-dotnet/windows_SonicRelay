@@ -52,6 +52,48 @@ public sealed class UserConfigurationLoader
         }
     }
 
+    /// <summary>
+    /// Persists <paramref name="backendBaseUrl"/> (with its derived signaling
+    /// URL) as the configured backend, preserving the other settings already
+    /// in the file. Without this, the template written on first run keeps
+    /// pointing every startup at localhost, so the stored session is never
+    /// restored against the backend the user actually signed in to.
+    /// </summary>
+    public async Task SaveBackendAsync(Uri backendBaseUrl, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(backendBaseUrl);
+        var normalized = backendBaseUrl.AbsoluteUri.EndsWith('/')
+            ? backendBaseUrl
+            : new Uri(backendBaseUrl.AbsoluteUri + "/");
+        var signaling = new UriBuilder(new Uri(normalized, "ws/signaling"))
+        {
+            Scheme = string.Equals(normalized.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? "wss" : "ws"
+        };
+
+        var existing = await TryReadDocumentAsync(cancellationToken);
+        var document = new ConfigurationDocument(
+            normalized.AbsoluteUri,
+            signaling.Uri.AbsoluteUri,
+            existing?.DefaultMaxViewers is > 0 ? existing.DefaultMaxViewers : 4,
+            existing?.DevelopmentMode ?? false);
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        await File.WriteAllTextAsync(_path, JsonSerializer.Serialize(document, JsonOptions), cancellationToken);
+    }
+
+    private async Task<ConfigurationDocument?> TryReadDocumentAsync(CancellationToken cancellationToken)
+    {
+        if (!File.Exists(_path)) return null;
+        try
+        {
+            await using var stream = File.OpenRead(_path);
+            return await JsonSerializer.DeserializeAsync<ConfigurationDocument>(stream, JsonOptions, cancellationToken);
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     private static Uri ParseUri(string? value, string name)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
