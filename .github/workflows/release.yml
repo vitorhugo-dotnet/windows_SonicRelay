@@ -76,23 +76,16 @@ jobs:
           -p:WindowsAppSDKSelfContained=true
           --output artifacts/publish/win-x64
 
-      - name: Publish portable single-file EXE
-        run: >-
-          dotnet publish src/SonicRelay.Windows.App/SonicRelay.Windows.App.csproj
-          --configuration Release --runtime win-x64 --self-contained true --no-restore
-          -p:WindowsPackageType=None
-          -p:WindowsAppSDKSelfContained=true
-          -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:EnableCompressionInSingleFile=true
-          --output artifacts/publish/win-x64-single-file
-
       - name: Install WiX toolset
         shell: pwsh
         run: |
-          dotnet tool install --global wix
+          # Pin to WiX v5: v6+ requires accepting the Open Source Maintenance Fee EULA,
+          # which fails an unattended CI install. v5 uses the same v4 authoring schema.
+          dotnet tool install --global wix --version 5.0.2
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
           wix --version
+          # Standard bootstrapper (bal:) lives in this package in v5.
+          wix extension add -g WixToolset.BootstrapperApplications.wixext/5.0.2
 
       - name: Create ZIP, EXE, MSI, and checksums
         id: assets
@@ -101,7 +94,6 @@ jobs:
           $version = '${{ steps.release.outputs.version }}'
           $msiVersion = '${{ steps.release.outputs.msi-version }}'
           $publishDirectory = Join-Path $PWD 'artifacts/publish/win-x64'
-          $singleFileDirectory = Join-Path $PWD 'artifacts/publish/win-x64-single-file'
           $distDirectory = Join-Path $PWD 'artifacts/release'
 
           New-Item -ItemType Directory -Force -Path $distDirectory | Out-Null
@@ -120,18 +112,27 @@ jobs:
 
           Compress-Archive -Path "$publishDirectory/*" -DestinationPath $zipPath -CompressionLevel Optimal -Force
 
-          $publishedExe = Join-Path $singleFileDirectory 'SonicRelay.Windows.App.exe'
-          if (-not (Test-Path -LiteralPath $publishedExe)) {
-            throw "Expected single-file executable was not found: $publishedExe"
-          }
-          Copy-Item -LiteralPath $publishedExe -Destination $exePath -Force
-
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+
+          # 1) Per-user MSI (installs to %LOCALAPPDATA%\SonicRelay\WindowsPublisher).
           wix build packaging/SonicRelay.WindowsPublisher.wxs `
             -arch x64 `
             -d ProductVersion=$msiVersion `
             -d PublishDir=$publishDirectory `
             -o $msiPath
+
+          # 2) Setup .exe = Burn bundle wrapping the MSI (NOT the raw app binary).
+          #    Double-clicking it runs setup and installs per-user with no elevation.
+          wix build packaging/SonicRelay.WindowsPublisher.Bundle.wxs `
+            -arch x64 `
+            -ext WixToolset.BootstrapperApplications.wixext `
+            -d ProductVersion=$msiVersion `
+            -d MsiPath=$msiPath `
+            -o $exePath
+
+          if (-not (Test-Path -LiteralPath $exePath)) {
+            throw "Expected setup bundle was not produced: $exePath"
+          }
 
           Get-ChildItem -Path $distDirectory -File |
             Where-Object { $_.Extension -in @('.zip', '.exe', '.msi') } |

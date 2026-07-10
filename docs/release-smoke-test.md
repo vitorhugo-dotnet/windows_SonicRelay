@@ -27,7 +27,35 @@ Run this checklist before approving every Windows Publisher release. All mandato
 - [ ] Confirm extraction neither shows an administrator prompt nor requires writing to Program Files.
 - [ ] Confirm there is no installer to run and extraction does not install a Windows service or drivers.
 
+## Installers: setup EXE and MSI (per-user, no elevation)
+
+The release ships two installers in addition to the portable ZIP. Both install the same
+app into `%LOCALAPPDATA%\SonicRelay\WindowsPublisher` for the current user only. The
+release **must not** contain a raw `SonicRelay.Windows.App.exe` as the `.exe` asset — the
+`.exe` is a WiX Burn setup wrapper around the MSI.
+
+- [ ] Confirm the release `.exe` is named `SonicRelay.WindowsPublisher-win-x64-<version>.exe`
+      and is a **setup** program (double-clicking opens setup), not the app itself.
+- [ ] **Setup EXE:** double-click the `.exe` from a standard user account. Confirm setup
+      runs and installs **without any UAC/elevation prompt**.
+- [ ] **MSI:** double-click the `.msi` from a standard user account. Confirm it installs
+      **without any UAC/elevation prompt**.
+- [ ] Confirm the installed files are under `%LOCALAPPDATA%\SonicRelay\WindowsPublisher`
+      and nothing is written to `Program Files` or `HKLM`.
+- [ ] Confirm no Windows service, driver, or firewall rule was created by either installer.
+- [ ] Confirm a **Start Menu** shortcut "SonicRelay Windows Publisher" exists and launches
+      the installed app.
+- [ ] **Uninstall** via Settings → Apps (or Programs and Features) as a standard user and
+      confirm it removes the install folder and the Start Menu shortcut without elevation.
+- [ ] **SmartScreen (expected, unsigned):** the EXE/MSI are currently unsigned, so Windows
+      SmartScreen may warn ("Windows protected your PC"). Confirm the user can proceed via
+      *More info → Run anyway*. This is expected until code signing is added.
+
 ## Start and configure
+
+Runnable from the portable ZIP extraction **or** the installed location.
+
+
 
 - [ ] Run `SonicRelay.Windows.App.exe` directly from the extracted folder without **Run as administrator**.
 - [ ] Confirm startup does not show an administrator prompt, request firewall rules, install a service, install drivers, or modify a protected machine location.

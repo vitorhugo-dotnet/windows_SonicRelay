@@ -1,0 +1,29 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <!--
+    User-scope setup wrapper (issue #19). The release .exe must be an installer, not the
+    raw WinUI app binary. This Burn bundle chains the per-user MSI so double-clicking the
+    .exe runs setup and installs into %LOCALAPPDATA%\SonicRelay\WindowsPublisher with no
+    elevation, no Program Files write, no service, no driver and no firewall rule.
+
+    Unsigned for now (see docs/release-smoke-test.md for the SmartScreen implication).
+  -->
+  <Bundle
+    Name="SonicRelay Windows Publisher"
+    Manufacturer="SonicRelay"
+    Version="$(ProductVersion)"
+    UpgradeCode="{3C1D9E42-7A6B-4F51-9E2C-6B7A8C9D0E1F}">
+
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication Theme="none" />
+    </BootstrapperApplication>
+
+    <Chain>
+      <!-- The per-user MSI keeps the whole install unelevated. -->
+      <MsiPackage
+        SourceFile="$(MsiPath)"
+        Vital="yes"
+        Compressed="yes" />
+    </Chain>
+  </Bundle>
+</Wix>
