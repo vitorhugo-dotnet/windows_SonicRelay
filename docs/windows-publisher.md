@@ -4,7 +4,7 @@
 
 The Windows Publisher will turn Windows system audio into a low-latency SonicRelay stream. It will be the publisher-side desktop client; playback clients and backend services live outside this repository.
 
-The application shell, user-scoped configuration/token storage, typed backend HTTP clients, signaling client, and WASAPI loopback capture exist today. WebRTC media publication below remains target architecture.
+The application shell, user-scoped configuration/token storage, typed backend HTTP clients, signaling client, WASAPI loopback capture, and per-viewer WebRTC/Opus publication exist today. See the [WebRTC end-to-end test](webrtc-e2e-test.md) for the manual Windows-Publisher ↔ Flutter-viewer validation of offer/answer/ICE and audio playback.
 
 ## System context
 
