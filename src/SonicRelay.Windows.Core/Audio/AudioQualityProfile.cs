@@ -24,6 +24,15 @@ public sealed record AudioQualityProfile(
     public const int MaxBitrateKbps = 192;
     public const int FixedSampleRateHz = 48000;
     public const string CustomId = "custom";
+    public const int DefaultExpectedPacketLossPercent = 10;
+
+    /// <summary>
+    /// Network packet loss the Opus encoder should plan for (drives in-band FEC
+    /// redundancy where the coding mode supports it — see OpusEncoderFactory in the
+    /// WebRtc project). This is a hint, not a guarantee; it only changes encoding,
+    /// never transport behavior.
+    /// </summary>
+    public int ExpectedPacketLossPercent { get; init; } = DefaultExpectedPacketLossPercent;
 
     private static readonly int[] AllowedFrameDurationsMs = [10, 20, 40];
 
@@ -70,6 +79,10 @@ public sealed record AudioQualityProfile(
         if (SampleRateHz != FixedSampleRateHz)
             throw new ArgumentException(
                 $"Sample rate must be {FixedSampleRateHz} Hz, was {SampleRateHz}.", nameof(SampleRateHz));
+        if (ExpectedPacketLossPercent is < 0 or > 100)
+            throw new ArgumentException(
+                $"Expected packet loss must be between 0 and 100 percent, was {ExpectedPacketLossPercent}.",
+                nameof(ExpectedPacketLossPercent));
     }
 
     /// <summary>Whether this profile matches one of the built-in presets by id.</summary>

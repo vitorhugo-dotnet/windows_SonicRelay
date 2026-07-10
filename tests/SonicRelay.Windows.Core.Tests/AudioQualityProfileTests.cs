@@ -58,6 +58,30 @@ public sealed class AudioQualityProfileTests
         Assert.Throws<ArgumentException>(profile.Validate);
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(101)]
+    public void Validate_rejects_out_of_range_expected_packet_loss(int lossPercent)
+    {
+        var profile = AudioQualityProfile.High with { ExpectedPacketLossPercent = lossPercent };
+        Assert.Throws<ArgumentException>(profile.Validate);
+    }
+
+    [Fact]
+    public void Expected_packet_loss_defaults_and_roundtrips_through_json()
+    {
+        Assert.Equal(
+            AudioQualityProfile.DefaultExpectedPacketLossPercent,
+            AudioQualityProfile.High.ExpectedPacketLossPercent);
+
+        var profile = AudioQualityProfile.Voice with { ExpectedPacketLossPercent = 25 };
+        var json = System.Text.Json.JsonSerializer.Serialize(profile);
+        var restored = System.Text.Json.JsonSerializer.Deserialize<AudioQualityProfile>(json);
+
+        Assert.Equal(profile, restored);
+        Assert.Equal(25, restored!.ExpectedPacketLossPercent);
+    }
+
     [Fact]
     public void Custom_builds_a_validated_custom_profile()
     {
