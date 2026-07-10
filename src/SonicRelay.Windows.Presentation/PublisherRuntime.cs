@@ -7,11 +7,10 @@ using SonicRelay.Windows.Core.Audio;
 using SonicRelay.Windows.Core.Configuration;
 using SonicRelay.Windows.Core.Diagnostics;
 using SonicRelay.Windows.Core.Storage;
-using SonicRelay.Windows.Presentation;
 using SonicRelay.Windows.Signaling;
 using SonicRelay.Windows.WebRtc;
 
-namespace SonicRelay.Windows.App;
+namespace SonicRelay.Windows.Presentation;
 
 public sealed class PublisherRuntime : IAsyncDisposable
 {
@@ -72,9 +71,16 @@ public sealed class PublisherRuntime : IAsyncDisposable
     public DiagnosticReportExporter ReportExporter { get; }
     public IWebRtcPublisher WebRtcPublisher => webRtcPublisher;
 
-    public static PublisherRuntime Create(Uri backendBaseUrl)
+    /// <summary>
+    /// Composes the shared publisher runtime for one backend. The platform shell
+    /// supplies its capture implementation (WASAPI loopback on Windows, PipeWire on
+    /// Linux later — issue #32); this shared composition never references a concrete
+    /// capture backend.
+    /// </summary>
+    public static PublisherRuntime Create(Uri backendBaseUrl, IAudioCaptureService audioCapture)
     {
         ArgumentNullException.ThrowIfNull(backendBaseUrl);
+        ArgumentNullException.ThrowIfNull(audioCapture);
         if (!backendBaseUrl.IsAbsoluteUri || backendBaseUrl.Scheme is not ("http" or "https"))
             throw new ConfigurationValidationException("Backend URL must be an absolute HTTP or HTTPS URL.");
 
@@ -111,7 +117,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
         var webRtcPublisher = new WebRtcPublisher(signaling, peers);
         signalingHandlers.Register(webRtcPublisher);
 
-        var audio = new AudioCaptureService();
+        var audio = audioCapture;
         var audioOutput = new AudioOutputPreferenceStore();
         // Restore the previously selected output device (null = system default).
         audio.SelectOutputDevice(audioOutput.SelectedDeviceId);

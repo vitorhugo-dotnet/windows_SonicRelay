@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using SonicRelay.Windows.Presentation;
+using SonicRelay.Windows.Presentation.Platform;
 
 namespace SonicRelay.Windows.App.Tray;
 
@@ -13,7 +14,7 @@ namespace SonicRelay.Windows.App.Tray;
 /// double-click raises <see cref="Activated"/>, and picking an entry raises
 /// <see cref="CommandInvoked"/> with the mapped <see cref="TrayCommand"/>.
 /// </summary>
-public sealed class Win32TrayIconService : ITrayIconService
+public sealed class Win32TrayIconService : ISystemTrayService
 {
     private const uint CallbackMessage = WM_APP + 1;
     private const uint TrayIconId = 1;

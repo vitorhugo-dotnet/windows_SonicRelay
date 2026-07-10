@@ -1,5 +1,7 @@
 using Microsoft.UI.Xaml;
+using SonicRelay.Windows.Audio;
 using SonicRelay.Windows.Core.Configuration;
+using SonicRelay.Windows.Presentation;
 
 namespace SonicRelay.Windows.App;
 
@@ -57,7 +59,9 @@ public partial class App : Application
     /// </summary>
     public async Task ConfigureBackendAsync(Uri backendBaseUrl, bool restoreSession = true)
     {
-        var replacement = PublisherRuntime.Create(backendBaseUrl);
+        // The WASAPI-backed capture service is the Windows platform adapter; the
+        // shared runtime composition only sees IAudioCaptureService (issue #32).
+        var replacement = PublisherRuntime.Create(backendBaseUrl, new AudioCaptureService());
         var previous = runtime;
         runtime = replacement;
         RuntimeChanged?.Invoke(runtime);
