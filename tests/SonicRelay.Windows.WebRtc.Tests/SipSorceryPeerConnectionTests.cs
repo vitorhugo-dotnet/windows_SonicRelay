@@ -77,6 +77,39 @@ public sealed class SipSorceryPeerConnectionTests
     }
 
     [Fact]
+    public async Task Frames_sent_before_connection_are_discarded_not_buffered()
+    {
+        // Issue #31: disconnected/non-negotiated peers must not accumulate audio
+        // for later playback — neither in the accumulator nor the pacer backlog.
+        await using var peer = new SipSorceryPeerConnection("viewer-1", new RTCPeerConnection(new RTCConfiguration()));
+        var frame = new WebRtcAudioFrame(new byte[960 * 2 * 2], 48000, 2, TimeSpan.FromMilliseconds(1));
+
+        await peer.SendAudioFrameAsync(frame);
+
+        var audioSend = peer.Diagnostics.AudioSend;
+        Assert.NotNull(audioSend);
+        Assert.Equal(0, audioSend!.EncodedPacketsSent);
+        Assert.Equal(0, audioSend.PacingBacklogPackets);
+    }
+
+    [Fact]
+    public async Task Diagnostics_expose_the_encoder_and_pacing_configuration()
+    {
+        await using var peer = new SipSorceryPeerConnection(
+            "viewer-1", new RTCPeerConnection(new RTCConfiguration()), AudioQualityProfile.Voice);
+
+        var audioSend = peer.Diagnostics.AudioSend;
+
+        Assert.NotNull(audioSend);
+        Assert.Equal(20, audioSend!.FrameDurationMs);
+        Assert.Equal(32, audioSend.OpusBitrateKbps);
+        Assert.Equal(1, audioSend.Channels);
+        Assert.Equal("voice", audioSend.ProfileId);
+        Assert.True(audioSend.InbandFecEnabled);
+        Assert.Equal(AudioQualityProfile.DefaultExpectedPacketLossPercent, audioSend.ExpectedPacketLossPercent);
+    }
+
+    [Fact]
     public async Task Applying_a_malformed_answer_throws_publisher_exception()
     {
         await using var peer = new SipSorceryPeerConnection("viewer-1", new RTCPeerConnection(new RTCConfiguration()));

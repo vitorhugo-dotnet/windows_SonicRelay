@@ -1,43 +1,56 @@
-using System.Threading.Channels;
 using SonicRelay.Windows.Audio;
 using SonicRelay.Windows.WebRtc;
 
 namespace SonicRelay.Windows.App;
 
+/// <summary>Capture-to-WebRTC pump counters (issue #31).</summary>
+public sealed record AudioBridgeDiagnostics(long FramesCaptured, AudioQueueDiagnostics Queue);
+
 /// <summary>
 /// Pumps captured audio frames into the WebRTC publisher. Lives in the App
 /// project because it is the only one that references both the Audio and WebRtc
 /// assemblies (keeping those two independent of each other). The WASAPI capture
-/// callback never blocks: frames are converted to S16 and dropped into a bounded
-/// channel that discards the oldest frame under back-pressure, and a background
-/// consumer feeds them to <see cref="IWebRtcPublisher.PushAudioFrameAsync"/>.
+/// callback never blocks: frames are converted to S16 and dropped into an
+/// <see cref="AudioFrameLatencyQueue"/> bounded by an audio-duration latency
+/// budget (default 150 ms) that discards the oldest frames under back-pressure,
+/// and a background consumer feeds them to
+/// <see cref="IWebRtcPublisher.PushAudioFrameAsync"/>.
 /// </summary>
 public sealed class WebRtcAudioBridge : IAsyncDisposable
 {
     private readonly IAudioCaptureService audio;
     private readonly IWebRtcPublisher publisher;
     private readonly Action<string>? onError;
-    private readonly Channel<WebRtcAudioFrame> channel;
+    private readonly AudioFrameLatencyQueue queue;
     private readonly CancellationTokenSource cancellation = new();
     private readonly Task consumer;
+    private long framesCaptured;
     private bool disposed;
 
-    public WebRtcAudioBridge(IAudioCaptureService audio, IWebRtcPublisher publisher, Action<string>? onError = null)
+    public WebRtcAudioBridge(
+        IAudioCaptureService audio,
+        IWebRtcPublisher publisher,
+        Action<string>? onError = null,
+        TimeSpan? latencyBudget = null)
     {
         this.audio = audio ?? throw new ArgumentNullException(nameof(audio));
         this.publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         this.onError = onError;
-        channel = System.Threading.Channels.Channel.CreateBounded<WebRtcAudioFrame>(
-            new BoundedChannelOptions(50) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+        queue = new AudioFrameLatencyQueue(latencyBudget);
         this.audio.FrameCaptured += OnFrameCaptured;
         consumer = Task.Run(ConsumeAsync);
     }
+
+    /// <summary>Local capture/queue/drop counters for the packet-loss diagnostics.</summary>
+    public AudioBridgeDiagnostics Diagnostics =>
+        new(Interlocked.Read(ref framesCaptured), queue.Diagnostics);
 
     private void OnFrameCaptured(AudioFrame frame)
     {
         if (disposed) return;
         try
         {
+            Interlocked.Increment(ref framesCaptured);
             var sourceFormat = frame.Format == AudioSampleFormat.IeeeFloat32
                 ? WebRtcSourceSampleFormat.IeeeFloat32
                 : WebRtcSourceSampleFormat.Pcm16;
@@ -45,7 +58,7 @@ public sealed class WebRtcAudioBridge : IAsyncDisposable
             if (samples.Length == 0) return;
             var bytes = System.Runtime.InteropServices.MemoryMarshal.AsBytes(samples.AsSpan());
             var webRtcFrame = new WebRtcAudioFrame(bytes, frame.SampleRate, frame.ChannelCount, frame.Timestamp);
-            channel.Writer.TryWrite(webRtcFrame);
+            queue.TryEnqueue(webRtcFrame);
         }
         catch (Exception exception)
         {
@@ -57,8 +70,10 @@ public sealed class WebRtcAudioBridge : IAsyncDisposable
     {
         try
         {
-            await foreach (var frame in channel.Reader.ReadAllAsync(cancellation.Token).ConfigureAwait(false))
+            while (true)
             {
+                var frame = await queue.DequeueAsync(cancellation.Token).ConfigureAwait(false);
+                if (frame is null) return;
                 try
                 {
                     await publisher.PushAudioFrameAsync(frame, cancellation.Token).ConfigureAwait(false);
@@ -85,10 +100,11 @@ public sealed class WebRtcAudioBridge : IAsyncDisposable
         if (disposed) return;
         disposed = true;
         audio.FrameCaptured -= OnFrameCaptured;
-        channel.Writer.TryComplete();
+        queue.Complete();
         await cancellation.CancelAsync().ConfigureAwait(false);
         try { await consumer.ConfigureAwait(false); }
         catch (OperationCanceledException) { }
         cancellation.Dispose();
+        queue.Dispose();
     }
 }

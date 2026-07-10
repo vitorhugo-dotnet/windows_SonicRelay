@@ -79,11 +79,31 @@ public sealed class WebRtcPublisherOptions
     public IReadOnlyList<WebRtcIceServer> IceServers { get; }
 }
 
+/// <summary>
+/// Publisher-side audio send counters for one peer (issue #31): what was encoded
+/// and sent, what was dropped locally, how far pacing is behind, and the encoder
+/// configuration needed to correlate receiver-side loss reports. Contains no SDP,
+/// addresses, or other sensitive connection data.
+/// </summary>
+public sealed record AudioSendDiagnostics(
+    long EncodedPacketsSent,
+    long PacedPacketsDropped,
+    long SendFailures,
+    int PacingBacklogPackets,
+    TimeSpan PacingBacklogDuration,
+    int FrameDurationMs,
+    int OpusBitrateKbps,
+    int Channels,
+    string ProfileId,
+    bool InbandFecEnabled,
+    int ExpectedPacketLossPercent);
+
 public sealed record PeerConnectionDiagnostics(
     string ViewerId,
     PeerConnectionState State,
     string? SelectedCandidatePair = null,
-    TimeSpan? EstimatedRoundTripTime = null);
+    TimeSpan? EstimatedRoundTripTime = null,
+    AudioSendDiagnostics? AudioSend = null);
 
 public sealed record WebRtcPublisherDiagnostics(
     int ViewerConnectionCount,

@@ -1,4 +1,3 @@
-using Concentus.Enums;
 using Concentus.Structs;
 using SIPSorcery.Net;
 using SIPSorceryMedia.Abstractions;
@@ -17,9 +16,15 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
 {
     private const int SampleRate = 48000;
 
+    // Encoded packets may queue this much audio behind the pacing schedule before
+    // the oldest are discarded; the upper end of the 100–200 ms budget (issue #31).
+    private static readonly TimeSpan PacingLatencyBudget = TimeSpan.FromMilliseconds(200);
+
     private readonly RTCPeerConnection connection;
     private readonly OpusEncoder opusEncoder;
     private readonly OpusFrameAccumulator accumulator;
+    private readonly RtpPacketPacer pacer;
+    private readonly AudioQualityProfile profile;
     private readonly SemaphoreSlim sendLock = new(1, 1);
     private readonly AudioFormat opusFormat;
     private readonly byte[] encodeBuffer = new byte[4000];
@@ -40,6 +45,7 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
 
         var quality = profile ?? AudioQualityProfile.Default;
         quality.Validate();
+        this.profile = quality;
         var channels = quality.Channels;
         var bitrate = quality.OpusBitrateKbps * 1000;
         var stereo = channels == 2 ? 1 : 0;
@@ -57,16 +63,15 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
             $"useinbandfec=1;stereo={stereo};sprop-stereo={stereo};maxaveragebitrate={bitrate};maxplaybackrate=48000");
         this.connection.addTrack(new MediaStreamTrack(opusFormat, MediaStreamStatusEnum.SendOnly));
 
-        // Stereo profiles favour music fidelity; mono profiles are tuned for voice.
-        var application = channels == 2
-            ? OpusApplication.OPUS_APPLICATION_AUDIO
-            : OpusApplication.OPUS_APPLICATION_VOIP;
-        opusEncoder = new OpusEncoder(SampleRate, channels, application)
-        {
-            Bitrate = bitrate,
-            Complexity = 10,
-            SignalType = channels == 2 ? OpusSignal.OPUS_SIGNAL_MUSIC : OpusSignal.OPUS_SIGNAL_VOICE,
-        };
+        opusEncoder = OpusEncoderFactory.Create(quality);
+        // Encoded packets go through a monotonic pacer instead of straight to
+        // SendAudio: the accumulator can yield several frames per capture callback
+        // and SIPSorcery does not pace transmission by RTP timestamp, so without
+        // this stage those frames leave as a burst.
+        pacer = new RtpPacketPacer(
+            TimeSpan.FromMilliseconds(quality.FrameDurationMs),
+            PacingLatencyBudget,
+            packet => this.connection.SendAudio((uint)samplesPerChannel, packet));
 
         this.connection.OnAudioFormatsNegotiated += OnAudioFormatsNegotiated;
         this.connection.onicecandidate += OnIceCandidate;
@@ -75,7 +80,23 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
 
     public string ViewerId { get; }
 
-    public PeerConnectionDiagnostics Diagnostics => new(ViewerId, state);
+    public PeerConnectionDiagnostics Diagnostics => new(
+        ViewerId,
+        state,
+        SelectedCandidatePairTypes(),
+        null,
+        new AudioSendDiagnostics(
+            pacer.PacketsSent,
+            pacer.PacketsDropped,
+            pacer.SendFailures,
+            pacer.Backlog,
+            pacer.BacklogDuration,
+            profile.FrameDurationMs,
+            profile.OpusBitrateKbps,
+            profile.Channels,
+            profile.Id,
+            opusEncoder.UseInbandFEC,
+            profile.ExpectedPacketLossPercent));
 
     public event Func<WebRtcIceCandidate, CancellationToken, Task>? LocalIceCandidateReady;
     public event Action? DiagnosticsChanged;
@@ -136,6 +157,7 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
                 // No point queueing audio the transport cannot carry yet; stale
                 // buffered samples would only add latency once it connects.
                 accumulator.Clear();
+                pacer.Clear();
                 return;
             }
 
@@ -146,8 +168,10 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
                 var length = opusEncoder.Encode(pcm, samplesPerChannel, encodeBuffer, encodeBuffer.Length);
                 if (length <= 0) continue;
                 // Opus RTP timestamps advance on the 48 kHz clock: samplesPerChannel
-                // units per frame (480/960/1920 for 10/20/40 ms) regardless of channels.
-                connection.SendAudio((uint)samplesPerChannel, encodeBuffer[..length]);
+                // units per frame (480/960/1920 for 10/20/40 ms) regardless of
+                // channels. The pacer sends one packet per frame deadline instead
+                // of bursting everything the accumulator produced.
+                pacer.Enqueue(encodeBuffer[..length]);
             }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -204,6 +228,28 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
         }
     }
 
+    /// <summary>
+    /// Candidate types of the nominated ICE pair ("host->relay" etc.), so
+    /// diagnostics can tell direct from relayed transport. Types only — addresses
+    /// and ports are sensitive connection data and stay out of diagnostics.
+    /// </summary>
+    private string? SelectedCandidatePairTypes()
+    {
+        if (state != PeerConnectionState.Connected) return null;
+        try
+        {
+            var entry = connection.GetRtpChannel()?.NominatedEntry;
+            if (entry?.LocalCandidate is null || entry.RemoteCandidate is null) return null;
+            return $"{entry.LocalCandidate.type}->{entry.RemoteCandidate.type}";
+        }
+        catch
+        {
+            // Diagnostics must never take down the stream; the pair just reads
+            // as unknown.
+            return null;
+        }
+    }
+
     private void OnConnectionStateChanged(RTCPeerConnectionState next)
     {
         state = next switch
@@ -238,6 +284,8 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
         connection.OnAudioFormatsNegotiated -= OnAudioFormatsNegotiated;
         connection.onicecandidate -= OnIceCandidate;
         connection.onconnectionstatechange -= OnConnectionStateChanged;
+        // Stop paced sends before closing the transport they write to.
+        await pacer.DisposeAsync().ConfigureAwait(false);
         try
         {
             connection.close();
