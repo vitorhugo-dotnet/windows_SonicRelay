@@ -1,13 +1,12 @@
-using SonicRelay.Windows.Presentation;
-
-namespace SonicRelay.Windows.App.Tray;
+namespace SonicRelay.Windows.Presentation.Platform;
 
 /// <summary>
-/// Owns the Windows notification-area (tray) icon and its context menu. The
-/// streaming/audio/WebRTC layers never see this interface — it isolates the Win32
-/// shell interop so the rest of the app deals only in <see cref="TrayCommand"/>s.
+/// Owns the platform notification-area (tray) icon and its context menu. The
+/// streaming/audio/WebRTC layers never see this interface — it isolates the shell
+/// interop (Win32 today, StatusNotifierItem/AppIndicator on Linux later, issue #32)
+/// so the rest of the app deals only in <see cref="TrayCommand"/>s.
 /// </summary>
-public interface ITrayIconService : IDisposable
+public interface ISystemTrayService : IDisposable
 {
     /// <summary>Adds the icon to the notification area (idempotent).</summary>
     void Show();

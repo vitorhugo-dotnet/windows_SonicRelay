@@ -177,9 +177,11 @@ publisher pipeline is owned by the app (`App.Runtime`), not the window, so hidin
 the window never tears it down — only an explicit **Quit** does.
 
 The behaviour is driven by `TrayApplicationController` (a pure, unit-tested decision
-core in `SonicRelay.Windows.Presentation`) wired to three isolated App-layer
-services: `ITrayIconService` (Win32 `Shell_NotifyIcon`), `IAppLifetimeService`
-(hide/show/quit over `AppWindow`), and `IBackgroundNotifier` (tray balloon toasts).
+core in `SonicRelay.Windows.Presentation`) wired to three platform contracts from
+`SonicRelay.Windows.Presentation.Platform` (issue #32), each implemented by an
+App-layer Windows adapter: `ISystemTrayService` (Win32 `Shell_NotifyIcon`),
+`IWindowLifecycleService` (hide/show/quit over `AppWindow`), and
+`INotificationService` (tray balloon toasts).
 The streaming/audio/WebRTC layers never depend on any of these.
 
 - **Close / minimize** hide the window to the notification area when *Keep running in

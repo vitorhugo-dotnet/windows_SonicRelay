@@ -1,11 +1,12 @@
-namespace SonicRelay.Windows.App.Tray;
+namespace SonicRelay.Windows.Presentation.Platform;
 
 /// <summary>
 /// Controls the main window's background lifetime: hide to tray, restore/focus from
 /// tray, and an explicit quit that disposes the publisher runtime and exits the
-/// process. Keeps window/AppWindow interop out of the tray and streaming layers.
+/// process. Keeps window interop (WinUI AppWindow today, Avalonia window later,
+/// issue #32) out of the tray and streaming layers.
 /// </summary>
-public interface IAppLifetimeService
+public interface IWindowLifecycleService
 {
     /// <summary>Hides the main window; the app keeps running in the tray.</summary>
     void HideToTray();

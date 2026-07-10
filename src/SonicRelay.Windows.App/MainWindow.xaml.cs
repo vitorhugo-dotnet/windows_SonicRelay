@@ -7,6 +7,7 @@ using SonicRelay.Windows.App.Pages;
 using SonicRelay.Windows.App.Tray;
 using SonicRelay.Windows.Core.Configuration;
 using SonicRelay.Windows.Presentation;
+using SonicRelay.Windows.Presentation.Platform;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics;
 
@@ -19,9 +20,9 @@ public sealed partial class MainWindow : Window
     // Background/tray coordination (issue #26). The decision core is pure and unit
     // tested; here we only glue it to Win32 tray/lifetime/notification services.
     private readonly TrayApplicationController tray;
-    private readonly ITrayIconService trayIcon;
-    private readonly IAppLifetimeService lifetime;
-    private readonly IBackgroundNotifier notifier;
+    private readonly ISystemTrayService trayIcon;
+    private readonly IWindowLifecycleService lifetime;
+    private readonly INotificationService notifier;
     private PublisherSnapshot? lastSnapshot;
     private bool suppressMinimizeHandling;
     private bool minimizedNoticeShown;

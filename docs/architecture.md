@@ -4,22 +4,30 @@
 
 ```mermaid
 flowchart TD
-    App[SonicRelay.Windows.App] --> Core[SonicRelay.Windows.Core]
+    App[SonicRelay.Windows.App] --> Presentation[SonicRelay.Windows.Presentation]
+    App --> Core[SonicRelay.Windows.Core]
     App --> ApiClient[SonicRelay.Windows.ApiClient]
     App --> Signaling[SonicRelay.Windows.Signaling]
     App --> Audio[SonicRelay.Windows.Audio]
     App --> WebRtc[SonicRelay.Windows.WebRtc]
+    Presentation --> Core
+    Presentation --> ApiClient
+    Presentation --> Signaling
+    Presentation --> Audio
+    Presentation --> WebRtc
     CoreTests[SonicRelay.Windows.Core.Tests] --> Core
     ApiTests[SonicRelay.Windows.ApiClient.Tests] --> ApiClient
     SignalingTests[SonicRelay.Windows.Signaling.Tests] --> Signaling
     AudioTests[SonicRelay.Windows.Audio.Tests] --> Audio
+    PresentationTests[SonicRelay.Windows.Presentation.Tests] --> Presentation
 ```
 
-- **App** is the WinUI 3 composition root and owns desktop lifecycle and presentation.
+- **App** is the WinUI 3 shell: window/tray/notification platform adapters, XAML pages, and nothing that another desktop shell would need to duplicate.
+- **Presentation** is the shared, platform-neutral application layer: the publisher workflow, runtime composition (`PublisherRuntime`), capture→WebRTC pump (`WebRtcAudioBridge`), view models, the interface state machine (`PublisherUiState`), and the platform contracts under `Presentation/Platform`.
 - **Core** will hold application-independent domain state and rules.
 - **ApiClient** will implement typed backend HTTP communication.
 - **Signaling** manages authenticated outbound WebSocket signaling messages, validated envelopes, connection state, and conservative reconnect behavior. It does not transport audio.
-- **Audio** owns default-render-device WASAPI loopback capture, validated audio-frame delivery, activity metering, lifecycle state, and capture diagnostics.
+- **Audio** owns default-render-device WASAPI loopback capture, validated audio-frame delivery, activity metering, lifecycle state, and capture diagnostics, all behind `IAudioCaptureService`/`IAudioDeviceEnumerator`.
 - **WebRtc** will own peer connections, negotiation, and Opus publication.
 
 Capability project references establish dependency direction: Signaling depends on Core for configuration and user-scoped tokens, while Audio remains independently testable and WebRtc remains an isolated placeholder until its requirements are implemented.
@@ -38,6 +46,59 @@ flowchart LR
 ```
 
 The UI will request operations through application-level orchestration added in later issues. Capability projects must not depend on the App project. Cross-cutting contracts should be introduced only when a concrete feature needs them.
+
+## Multiplatform direction (issue #32)
+
+The publisher will eventually ship on Linux from a shared Avalonia shell. The
+strategy is: extract everything platform-neutral first (this phase), build the new
+shell on Windows and validate parity, then add the Linux platform adapter —
+never mixing a UI rewrite with a new audio-capture implementation.
+
+Target layout:
+
+```text
+SonicRelay.Desktop            shared Avalonia UI (future)
+SonicRelay.Windows.Presentation  shared workflow, runtime composition, view models, UI states
+SonicRelay.Windows.{Core, ApiClient, Signaling, WebRtc, Audio}  shared capabilities
+Platform adapters (Windows)   WASAPI loopback, Win32 tray, WinUI window lifecycle
+Platform adapters (Linux)     PipeWire capture, StatusNotifier tray, XDG autostart (future)
+```
+
+### Platform contracts
+
+View models and the shared shell must never touch WASAPI, PipeWire, WinUI, or
+Wayland/X11 directly. OS-specific capabilities sit behind contracts in
+`SonicRelay.Windows.Presentation/Platform` (and the audio contracts in the Audio
+project), each implemented per platform:
+
+| Contract | Windows implementation | Linux implementation (planned) |
+| --- | --- | --- |
+| `IAudioCaptureService` | `AudioCaptureService` (WASAPI loopback) | PipeWire capture |
+| `IAudioDeviceEnumerator` | WASAPI render endpoints | PipeWire sinks/monitors |
+| `ISystemTrayService` | `Win32TrayIconService` (Shell_NotifyIcon) | StatusNotifierItem/AppIndicator |
+| `IWindowLifecycleService` | `AppLifetimeService` (AppWindow) | Avalonia window lifetime |
+| `INotificationService` | `TrayBalloonNotifier` | freedesktop notifications |
+| `IAutoStartService` | HKCU Run key / Startup folder (future) | XDG autostart entry (future) |
+| `IPlatformPermissionService` | not required for WASAPI loopback | xdg-desktop-portal (Wayland) |
+
+Adapters are composed at the shell's composition root (today `App`/`MainWindow`
+construct the Windows adapters and hand `IAudioCaptureService` to
+`PublisherRuntime.Create`); the shared layer only ever sees the contracts.
+
+### Interface states
+
+`PublisherUiState` defines the canonical states every shell must represent —
+`LoggedOut`, `Authenticating`, `Idle`, `CreatingSession`, `WaitingViewer`,
+`ConnectingSignaling`, `ConnectingWebRtc`, `StreamingDirect`, `StreamingRelay`,
+`Reconnecting`, `Faulted`, `Ended`. `PublisherUiStateResolver` derives the state
+from the publisher snapshot and WebRTC diagnostics, and
+`PublisherUiCapabilities` declares each state's allowed actions, retry
+availability, live-metric visibility, and tray behavior. Both are pure and unit
+tested; shells bind to them instead of re-deriving conditions.
+
+Non-admin operation remains an architectural boundary on every platform: the
+Linux publisher must run without root, and capture must not require Wine or a
+legacy PulseAudio path as its primary implementation.
 
 ## Error boundaries
 

@@ -1,12 +1,30 @@
 namespace SonicRelay.Windows.Audio;
 
-public interface IAudioCaptureService : IAsyncDisposable
+/// <summary>
+/// Enumerates and selects the audio output (render) endpoint to capture. Split from
+/// <see cref="IAudioCaptureService"/> as one of the platform contracts of issue #32:
+/// on Windows this surfaces WASAPI render endpoints, on Linux it will surface
+/// PipeWire sinks/monitors. UI layers consume only this contract.
+/// </summary>
+public interface IAudioDeviceEnumerator
+{
+    /// <summary>The selected render device id, or null for the system default.</summary>
+    string? PreferredDeviceId { get; }
+
+    /// <summary>Lists the active render endpoints for the source picker.</summary>
+    IReadOnlyList<AudioOutputDevice> GetOutputDevices();
+
+    /// <summary>
+    /// Selects which render endpoint to capture (null = system default). Applies to
+    /// the next capture start; it does not interrupt an in-progress capture.
+    /// </summary>
+    void SelectOutputDevice(string? deviceId);
+}
+
+public interface IAudioCaptureService : IAudioDeviceEnumerator, IAsyncDisposable
 {
     AudioCaptureState State { get; }
     AudioCaptureDiagnostics Diagnostics { get; }
-
-    /// <summary>The selected render device id, or null for the system default.</summary>
-    string? PreferredDeviceId { get; }
 
     event Action<AudioCaptureState>? StateChanged;
     event Action<AudioFrame>? FrameCaptured;
@@ -15,15 +33,6 @@ public interface IAudioCaptureService : IAsyncDisposable
     Task StopAsync(CancellationToken cancellationToken = default);
     Task PauseAsync(CancellationToken cancellationToken = default);
     Task ResumeAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>Lists the active Windows render endpoints for the source picker.</summary>
-    IReadOnlyList<AudioOutputDevice> GetOutputDevices();
-
-    /// <summary>
-    /// Selects which render endpoint to capture (null = system default). Applies to
-    /// the next capture start; it does not interrupt an in-progress capture.
-    /// </summary>
-    void SelectOutputDevice(string? deviceId);
 }
 
 internal interface IAudioCaptureBackend : IAsyncDisposable

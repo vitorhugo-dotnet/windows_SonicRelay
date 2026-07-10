@@ -1,15 +1,16 @@
 using SonicRelay.Windows.Audio;
 using SonicRelay.Windows.WebRtc;
 
-namespace SonicRelay.Windows.App;
+namespace SonicRelay.Windows.Presentation;
 
 /// <summary>Capture-to-WebRTC pump counters (issue #31).</summary>
 public sealed record AudioBridgeDiagnostics(long FramesCaptured, AudioQueueDiagnostics Queue);
 
 /// <summary>
-/// Pumps captured audio frames into the WebRTC publisher. Lives in the App
-/// project because it is the only one that references both the Audio and WebRtc
-/// assemblies (keeping those two independent of each other). The WASAPI capture
+/// Pumps captured audio frames into the WebRTC publisher. Lives in the shared
+/// Presentation project (extracted from the WinUI App for issue #32) so any desktop
+/// shell reuses the same pump; it depends only on the capture and WebRTC
+/// abstractions, keeping those two independent of each other. The platform capture
 /// callback never blocks: frames are converted to S16 and dropped into an
 /// <see cref="AudioFrameLatencyQueue"/> bounded by an audio-duration latency
 /// budget (default 150 ms) that discards the oldest frames under back-pressure,
