@@ -24,7 +24,7 @@
       </StackPanel>
 
       <ListBox ItemsSource="{Binding Navigation}"
-               SelectedIndex="0"
+               SelectedItem="{Binding SelectedNavigation, Mode=TwoWay}"
                Background="Transparent"
                BorderThickness="0"
                Padding="0">

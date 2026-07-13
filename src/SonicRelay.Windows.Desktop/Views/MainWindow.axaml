@@ -23,7 +23,7 @@
     <!-- Main area -->
     <DockPanel Grid.Column="1" LastChildFill="True">
 
-      <!-- Top bar -->
+      <!-- Top bar (shared across pages) -->
       <Border DockPanel.Dock="Top"
               Background="{DynamicResource Sonic.SidebarBackgroundBrush}"
               BorderBrush="{DynamicResource Sonic.CardBorderBrush}"
@@ -31,10 +31,10 @@
               Padding="24,16">
         <Grid ColumnDefinitions="*,Auto">
           <StackPanel Spacing="2" VerticalAlignment="Center">
-            <TextBlock Text="Dashboard" FontSize="{StaticResource Sonic.FontSizeHeadline}"
+            <TextBlock Text="{Binding PageTitle}" FontSize="{StaticResource Sonic.FontSizeHeadline}"
                        FontWeight="SemiBold"
                        Foreground="{DynamicResource Sonic.TextPrimaryBrush}" />
-            <TextBlock Text="Live status of the publisher transmission" Classes="metric-label" />
+            <TextBlock Text="{Binding PageSubtitle}" Classes="metric-label" />
           </StackPanel>
           <controls:AccountStatusHeader Grid.Column="1"
                                         DataContext="{Binding Shell}"
@@ -42,66 +42,68 @@
         </Grid>
       </Border>
 
-      <!-- Technical console pinned to the bottom -->
-      <controls:TechnicalConsole DockPanel.Dock="Bottom"
-                                 Margin="24,0,24,20"
-                                 DataContext="{Binding Shell}" />
-
-      <!-- Contextual actions -->
-      <Border DockPanel.Dock="Top" Padding="24,16,24,0">
-        <StackPanel Orientation="Horizontal" Spacing="10">
-          <Button Content="Create session" Command="{Binding CreateSessionCommand}" />
-          <Button Content="Start audio" Command="{Binding StartAudioCommand}" />
-          <Button Content="Stop audio" Command="{Binding StopAudioCommand}" />
-          <Button Content="End session" Command="{Binding EndSessionCommand}" />
-          <Button Content="Retry" Command="{Binding RetryCommand}" />
-        </StackPanel>
-      </Border>
-
-      <!-- Scrollable card canvas -->
-      <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-        <WrapPanel Orientation="Horizontal" Margin="16,16,16,0">
-
-          <controls:SessionCodeCard Width="440" Margin="8" DataContext="{Binding Shell}" />
-
-          <controls:AudioLevelMonitor Width="440" Margin="8"
-                                      Level="{Binding Shell.AudioLevelFraction}"
-                                      PeakText="{Binding Shell.AudioPeakDbText}"
-                                      IsActive="{Binding Shell.IsCapturing}" />
-
-          <controls:InfrastructureStatusCard Width="360" Margin="8" DataContext="{Binding Shell}" />
-
-          <!-- Stream quality tiles -->
-          <Border Classes="card" Width="360" Margin="8">
-            <StackPanel Spacing="14">
-              <TextBlock Classes="card-title" Text="Stream Quality" />
-              <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
-                <Border Grid.Column="0" Classes="card-elevated">
-                  <StackPanel Spacing="4">
-                    <TextBlock Classes="metric-label" Text="Latency" />
-                    <TextBlock Classes="mono metric-value" Text="{Binding Shell.LatencyText}" />
-                  </StackPanel>
-                </Border>
-                <Border Grid.Column="1" Classes="card-elevated">
-                  <StackPanel Spacing="4">
-                    <TextBlock Classes="metric-label" Text="Jitter" />
-                    <TextBlock Classes="mono metric-value" Text="{Binding Shell.JitterText}" />
-                  </StackPanel>
-                </Border>
-                <Border Grid.Column="2" Classes="card-elevated">
-                  <StackPanel Spacing="4">
-                    <TextBlock Classes="metric-label" Text="Loss" />
-                    <TextBlock Classes="mono metric-value" Text="{Binding Shell.PacketLossText}" />
-                  </StackPanel>
-                </Border>
-              </Grid>
+      <!-- Page content, swapped by the sidebar selection -->
+      <Panel>
+        <!-- Dashboard -->
+        <DockPanel IsVisible="{Binding IsDashboard}" LastChildFill="True">
+          <controls:TechnicalConsole DockPanel.Dock="Bottom"
+                                     Margin="24,0,24,20"
+                                     DataContext="{Binding Shell}" />
+          <Border DockPanel.Dock="Top" Padding="24,16,24,0">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <Button Content="Create session" Command="{Binding CreateSessionCommand}" />
+              <Button Content="Start audio" Command="{Binding StartAudioCommand}" />
+              <Button Content="Stop audio" Command="{Binding StopAudioCommand}" />
+              <Button Content="End session" Command="{Binding EndSessionCommand}" />
+              <Button Content="Retry" Command="{Binding RetryCommand}" />
             </StackPanel>
           </Border>
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <WrapPanel Orientation="Horizontal" Margin="16,16,16,0">
+              <controls:SessionCodeCard Width="440" Margin="8" DataContext="{Binding Shell}" />
+              <controls:AudioLevelMonitor Width="440" Margin="8"
+                                          Level="{Binding Shell.AudioLevelFraction}"
+                                          PeakText="{Binding Shell.AudioPeakDbText}"
+                                          IsActive="{Binding Shell.IsCapturing}" />
+              <controls:InfrastructureStatusCard Width="360" Margin="8" DataContext="{Binding Shell}" />
+              <Border Classes="card" Width="360" Margin="8">
+                <StackPanel Spacing="14">
+                  <TextBlock Classes="card-title" Text="Stream Quality" />
+                  <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                    <Border Grid.Column="0" Classes="card-elevated">
+                      <StackPanel Spacing="4">
+                        <TextBlock Classes="metric-label" Text="Latency" />
+                        <TextBlock Classes="mono metric-value" Text="{Binding Shell.LatencyText}" />
+                      </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" Classes="card-elevated">
+                      <StackPanel Spacing="4">
+                        <TextBlock Classes="metric-label" Text="Jitter" />
+                        <TextBlock Classes="mono metric-value" Text="{Binding Shell.JitterText}" />
+                      </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Classes="card-elevated">
+                      <StackPanel Spacing="4">
+                        <TextBlock Classes="metric-label" Text="Loss" />
+                        <TextBlock Classes="mono metric-value" Text="{Binding Shell.PacketLossText}" />
+                      </StackPanel>
+                    </Border>
+                  </Grid>
+                </StackPanel>
+              </Border>
+              <controls:BandwidthGauge Width="360" Margin="8" DataContext="{Binding Shell}" />
+            </WrapPanel>
+          </ScrollViewer>
+        </DockPanel>
 
-          <controls:BandwidthGauge Width="360" Margin="8" DataContext="{Binding Shell}" />
+        <!-- Session (DataContext is the shell VM, so IsSession is read from the root VM) -->
+        <controls:SessionView DataContext="{Binding Shell}"
+                              IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsSession, ElementName=RootWindow}" />
 
-        </WrapPanel>
-      </ScrollViewer>
+        <!-- Diagnostics -->
+        <controls:DiagnosticsView DataContext="{Binding Shell}"
+                                  IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsDiagnostics, ElementName=RootWindow}" />
+      </Panel>
     </DockPanel>
     </Grid>
   </Panel>

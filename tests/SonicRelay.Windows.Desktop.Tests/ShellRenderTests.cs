@@ -42,6 +42,27 @@ public sealed class ShellRenderTests
     }
 
     [AvaloniaFact]
+    public void Session_page_renders_when_selected()
+    {
+        var viewModel = MainWindowViewModel.CreatePreview();
+        viewModel.SelectedNavigation = viewModel.Navigation.Single(item => item.Key == PageKey.Session);
+        var window = new MainWindow { DataContext = viewModel };
+
+        window.Show();
+
+        var frame = window.CaptureRenderedFrame();
+        Assert.NotNull(frame);
+        Assert.True(viewModel.IsSession);
+
+        var dir = Environment.GetEnvironmentVariable("SHELL_SHOT_DIR");
+        if (!string.IsNullOrWhiteSpace(dir))
+        {
+            Directory.CreateDirectory(dir);
+            frame!.Save(Path.Combine(dir, "session-preview.png"));
+        }
+    }
+
+    [AvaloniaFact]
     public void Login_surface_renders_for_an_unauthenticated_shell()
     {
         var window = new MainWindow

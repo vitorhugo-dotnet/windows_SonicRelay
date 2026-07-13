@@ -20,6 +20,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private IWebRtcPublisher? webRtc;
     private PublisherSnapshot? snapshot;
     private bool showLogin = true;
+    private NavigationItem selectedNavigation;
 
     public MainWindowViewModel()
     {
@@ -29,12 +30,13 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         Navigation =
         [
-            new NavigationItem("◧", "Dashboard") { IsSelected = true },
-            new NavigationItem("♪", "Audio") { IsEnabled = false },
-            new NavigationItem("⧉", "Session") { IsEnabled = false },
-            new NavigationItem("⚙", "Diagnostics") { IsEnabled = false },
-            new NavigationItem("⚑", "Settings") { IsEnabled = false },
+            new NavigationItem(PageKey.Dashboard, "◧", "Dashboard"),
+            new NavigationItem(PageKey.Audio, "♪", "Audio") { IsEnabled = false },
+            new NavigationItem(PageKey.Session, "⧉", "Session"),
+            new NavigationItem(PageKey.Diagnostics, "⚙", "Diagnostics"),
+            new NavigationItem(PageKey.Settings, "⚑", "Settings") { IsEnabled = false },
         ];
+        selectedNavigation = Navigation[0];
 
         CreateSessionCommand = new RelayCommand(() => Run(w => w.CreateSessionAsync()), () => ShellCommandAvailability.CreateSession(snapshot, HasWorkflow));
         StartAudioCommand = new RelayCommand(() => Run(w => w.StartAudioAsync()), () => ShellCommandAvailability.StartAudio(snapshot, HasWorkflow));
@@ -47,6 +49,42 @@ public sealed class MainWindowViewModel : ViewModelBase
     public IReadOnlyList<NavigationItem> Navigation { get; }
     public DashboardShellViewModel Shell { get; } = new();
     public AuthViewModel Auth { get; }
+
+    /// <summary>The selected sidebar destination; bound two-way to the navigation rail.</summary>
+    public NavigationItem SelectedNavigation
+    {
+        get => selectedNavigation;
+        set
+        {
+            // The rail can push a null selection transiently; keep the last valid page.
+            if (value is null || !SetProperty(ref selectedNavigation, value)) return;
+            RaisePropertyChanged(nameof(CurrentPage));
+            RaisePropertyChanged(nameof(IsDashboard));
+            RaisePropertyChanged(nameof(IsSession));
+            RaisePropertyChanged(nameof(IsDiagnostics));
+            RaisePropertyChanged(nameof(PageTitle));
+            RaisePropertyChanged(nameof(PageSubtitle));
+        }
+    }
+
+    public PageKey CurrentPage => selectedNavigation.Key;
+    public bool IsDashboard => CurrentPage == PageKey.Dashboard;
+    public bool IsSession => CurrentPage == PageKey.Session;
+    public bool IsDiagnostics => CurrentPage == PageKey.Diagnostics;
+
+    public string PageTitle => CurrentPage switch
+    {
+        PageKey.Session => "Session",
+        PageKey.Diagnostics => "Diagnostics",
+        _ => "Dashboard",
+    };
+
+    public string PageSubtitle => CurrentPage switch
+    {
+        PageKey.Session => "Broadcast session details and controls",
+        PageKey.Diagnostics => "Publisher event log",
+        _ => "Live status of the publisher transmission",
+    };
 
     /// <summary>
     /// Whether the sign-in surface (rather than the dashboard) should be shown. Derived from the

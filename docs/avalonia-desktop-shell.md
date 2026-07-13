@@ -68,13 +68,21 @@ render tests) the WASAPI adapter cannot run, so the app opens on the representat
 snapshot instead — a bootstrap placeholder, overwritten by real data the moment a runtime
 attaches. The Linux capture adapter (PipeWire) is a later phase.
 
+## Navigation
+
+The sidebar switches the main content between the **Dashboard**, **Session** and
+**Diagnostics** destinations; `MainWindowViewModel.SelectedNavigation` (bound two-way to the
+rail) drives `CurrentPage` and the top-bar title. The **Audio** and **Settings** entries are
+declared but disabled — they need device enumeration and the preference stores, and land in a
+later slice.
+
 ## Scope boundaries
 
 - WinUI stays the shipped UI until the Avalonia shell reaches minimum functional parity; this
   work runs **side by side** and does not replace it.
-- Tray/minimize-to-tray, reconnection UX, and the non-dashboard pages (the disabled sidebar
-  entries are their placeholders) are later phase-2 slices, along with RTT plumbing and flipping
-  the default from WinUI to Avalonia once parity is validated.
+- Tray/minimize-to-tray and reconnection UX, the Audio and Settings pages (disabled sidebar
+  placeholders today), RTT plumbing, and flipping the default from WinUI to Avalonia once parity
+  is validated are later phase-2 slices.
 - Linux/PipeWire capture and packaging are phases 3–5.
 
 ## Running and testing
