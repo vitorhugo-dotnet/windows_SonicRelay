@@ -68,21 +68,27 @@ render tests) the WASAPI adapter cannot run, so the app opens on the representat
 snapshot instead — a bootstrap placeholder, overwritten by real data the moment a runtime
 attaches. The Linux capture adapter (PipeWire) is a later phase.
 
-## Navigation
+## Navigation and pages
 
-The sidebar switches the main content between the **Dashboard**, **Session** and
-**Diagnostics** destinations; `MainWindowViewModel.SelectedNavigation` (bound two-way to the
-rail) drives `CurrentPage` and the top-bar title. The **Audio** and **Settings** entries are
-declared but disabled — they need device enumeration and the preference stores, and land in a
-later slice.
+The sidebar switches the main content between **Dashboard**, **Audio**, **Session**,
+**Diagnostics** and **Settings**; `MainWindowViewModel.SelectedNavigation` (bound two-way to the
+rail) drives `CurrentPage` and the top-bar title.
+
+- **Audio** (`AudioPageViewModel`) picks the system output endpoint to capture, surfacing the
+  platform `IAudioDeviceEnumerator` and persisting the choice to `AudioOutputPreferenceStore`.
+- **Settings** (`SettingsViewModel`) edits the backend endpoint (read-only), the force-relay ICE
+  preference (`RelayPreferenceStore`) and the Opus quality profile (`AudioQualityStore`) — the
+  same user-scoped stores the WebRTC factory reads, so a change applies to the next stream.
+
+Both are built from the runtime's stores on `Attach`; without an attached runtime they are
+`IsConnected = false` and read-only (the standalone preview and the headless tests).
 
 ## Scope boundaries
 
 - WinUI stays the shipped UI until the Avalonia shell reaches minimum functional parity; this
   work runs **side by side** and does not replace it.
-- Tray/minimize-to-tray and reconnection UX, the Audio and Settings pages (disabled sidebar
-  placeholders today), RTT plumbing, and flipping the default from WinUI to Avalonia once parity
-  is validated are later phase-2 slices.
+- Tray/minimize-to-tray and reconnection UX, RTT plumbing, and flipping the default from WinUI to
+  Avalonia once parity is validated are later phase-2 slices.
 - Linux/PipeWire capture and packaging are phases 3–5.
 
 ## Running and testing

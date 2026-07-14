@@ -31,10 +31,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         Navigation =
         [
             new NavigationItem(PageKey.Dashboard, "◧", "Dashboard"),
-            new NavigationItem(PageKey.Audio, "♪", "Audio") { IsEnabled = false },
+            new NavigationItem(PageKey.Audio, "♪", "Audio"),
             new NavigationItem(PageKey.Session, "⧉", "Session"),
             new NavigationItem(PageKey.Diagnostics, "⚙", "Diagnostics"),
-            new NavigationItem(PageKey.Settings, "⚑", "Settings") { IsEnabled = false },
+            new NavigationItem(PageKey.Settings, "⚑", "Settings"),
         ];
         selectedNavigation = Navigation[0];
 
@@ -50,6 +50,11 @@ public sealed class MainWindowViewModel : ViewModelBase
     public DashboardShellViewModel Shell { get; } = new();
     public AuthViewModel Auth { get; }
 
+    /// <summary>Settings and Audio surfaces; rebuilt from the runtime's stores on <see cref="Attach"/>,
+    /// disconnected placeholders otherwise.</summary>
+    public SettingsViewModel Settings { get; private set; } = new();
+    public AudioPageViewModel Audio { get; private set; } = new();
+
     /// <summary>The selected sidebar destination; bound two-way to the navigation rail.</summary>
     public NavigationItem SelectedNavigation
     {
@@ -62,6 +67,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             RaisePropertyChanged(nameof(IsDashboard));
             RaisePropertyChanged(nameof(IsSession));
             RaisePropertyChanged(nameof(IsDiagnostics));
+            RaisePropertyChanged(nameof(IsAudio));
+            RaisePropertyChanged(nameof(IsSettings));
             RaisePropertyChanged(nameof(PageTitle));
             RaisePropertyChanged(nameof(PageSubtitle));
         }
@@ -71,18 +78,24 @@ public sealed class MainWindowViewModel : ViewModelBase
     public bool IsDashboard => CurrentPage == PageKey.Dashboard;
     public bool IsSession => CurrentPage == PageKey.Session;
     public bool IsDiagnostics => CurrentPage == PageKey.Diagnostics;
+    public bool IsAudio => CurrentPage == PageKey.Audio;
+    public bool IsSettings => CurrentPage == PageKey.Settings;
 
     public string PageTitle => CurrentPage switch
     {
+        PageKey.Audio => "Audio",
         PageKey.Session => "Session",
         PageKey.Diagnostics => "Diagnostics",
+        PageKey.Settings => "Settings",
         _ => "Dashboard",
     };
 
     public string PageSubtitle => CurrentPage switch
     {
+        PageKey.Audio => "Choose the system output to capture",
         PageKey.Session => "Broadcast session details and controls",
         PageKey.Diagnostics => "Publisher event log",
+        PageKey.Settings => "Backend, relay and audio quality",
         _ => "Live status of the publisher transmission",
     };
 
@@ -125,6 +138,15 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         if (workflow is not null) workflow.StateChanged += OnStateChanged;
         if (webRtc is not null) webRtc.DiagnosticsChanged += OnDiagnosticsChanged;
+
+        Settings = next is null
+            ? new SettingsViewModel()
+            : new SettingsViewModel(next.BackendBaseUrl.ToString(), next.RelayPreference, next.AudioQuality);
+        Audio = next is null
+            ? new AudioPageViewModel()
+            : new AudioPageViewModel(next.AudioCapture, next.AudioOutput);
+        RaisePropertyChanged(nameof(Settings));
+        RaisePropertyChanged(nameof(Audio));
 
         snapshot = workflow?.State;
         Rebuild();

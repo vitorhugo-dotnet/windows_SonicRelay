@@ -103,6 +103,14 @@
         <!-- Diagnostics -->
         <controls:DiagnosticsView DataContext="{Binding Shell}"
                                   IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsDiagnostics, ElementName=RootWindow}" />
+
+        <!-- Audio -->
+        <controls:AudioView DataContext="{Binding Audio}"
+                            IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsAudio, ElementName=RootWindow}" />
+
+        <!-- Settings -->
+        <controls:SettingsView DataContext="{Binding Settings}"
+                               IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsSettings, ElementName=RootWindow}" />
       </Panel>
     </DockPanel>
     </Grid>

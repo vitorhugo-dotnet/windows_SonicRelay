@@ -67,13 +67,20 @@ public sealed class MainWindowViewModelStateTests
     }
 
     [Fact]
-    public void Audio_and_settings_stay_disabled_placeholders()
+    public void All_destinations_are_navigable()
     {
         var vm = new MainWindowViewModel();
 
-        Assert.False(vm.Navigation.Single(item => item.Key == PageKey.Audio).IsEnabled);
-        Assert.False(vm.Navigation.Single(item => item.Key == PageKey.Settings).IsEnabled);
-        Assert.True(vm.Navigation.Single(item => item.Key == PageKey.Diagnostics).IsEnabled);
+        Assert.All(vm.Navigation, item => Assert.True(item.IsEnabled));
+    }
+
+    [Fact]
+    public void Audio_and_settings_are_disconnected_without_a_runtime()
+    {
+        var vm = new MainWindowViewModel();
+
+        Assert.False(vm.Settings.IsConnected);
+        Assert.False(vm.Audio.IsConnected);
     }
 
     [Fact]

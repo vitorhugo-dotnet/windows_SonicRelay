@@ -1,8 +1,12 @@
 using System.Globalization;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
+using SonicRelay.Windows.Core.Audio;
+using SonicRelay.Windows.Core.Configuration;
+using SonicRelay.Windows.Desktop.Controls;
 using SonicRelay.Windows.Desktop.Converters;
 using SonicRelay.Windows.Desktop.ViewModels;
 using SonicRelay.Windows.Desktop.Views;
@@ -81,6 +85,42 @@ public sealed class ShellRenderTests
         {
             Directory.CreateDirectory(dir);
             frame!.Save(Path.Combine(dir, "login-preview.png"));
+        }
+    }
+
+    [AvaloniaFact]
+    public void Settings_page_renders_its_connected_controls()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sonic-render-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var settings = new SettingsViewModel(
+                "https://backend.example/",
+                new RelayPreferenceStore(Path.Combine(dir, "p.json")),
+                new AudioQualityStore(Path.Combine(dir, "q.json")));
+            var window = new Window
+            {
+                Width = 700,
+                Height = 500,
+                Content = new SettingsView { DataContext = settings },
+            };
+
+            window.Show();
+
+            var frame = window.CaptureRenderedFrame();
+            Assert.NotNull(frame);
+
+            var dest = Environment.GetEnvironmentVariable("SHELL_SHOT_DIR");
+            if (!string.IsNullOrWhiteSpace(dest))
+            {
+                Directory.CreateDirectory(dest);
+                frame!.Save(Path.Combine(dest, "settings-preview.png"));
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { }
         }
     }
 
