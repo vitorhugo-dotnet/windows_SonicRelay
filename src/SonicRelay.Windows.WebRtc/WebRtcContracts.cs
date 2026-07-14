@@ -98,12 +98,40 @@ public sealed record AudioSendDiagnostics(
     bool InbandFecEnabled,
     int ExpectedPacketLossPercent);
 
+/// <summary>
+/// Receiver-side quality for one peer, taken from the viewer's RTCP receiver reports about
+/// our outgoing audio stream (issue #32's "real metrics"). Jitter is the interarrival jitter
+/// the viewer measured; <see cref="PacketLossPercent"/> is the loss fraction of the most
+/// recent report interval; <see cref="CumulativePacketsLost"/> is the running total. Contains
+/// no addresses or SDP — only quality counters.
+/// </summary>
+public sealed record AudioReceptionDiagnostics(
+    TimeSpan Jitter,
+    double PacketLossPercent,
+    long CumulativePacketsLost)
+{
+    /// <summary>
+    /// Projects a raw RTCP reception report sample into UI-friendly units: RTP jitter units
+    /// on the given clock become a duration, and the 8-bit fraction-lost becomes a percentage.
+    /// </summary>
+    public static AudioReceptionDiagnostics FromReport(uint jitterRtpUnits, byte fractionLost, int cumulativePacketsLost, int clockRateHz)
+    {
+        var clock = clockRateHz > 0 ? clockRateHz : 48000;
+        return new AudioReceptionDiagnostics(
+            Jitter: TimeSpan.FromSeconds((double)jitterRtpUnits / clock),
+            // RTCP fraction lost is the loss count scaled to an 8-bit fixed point (0..255).
+            PacketLossPercent: fractionLost / 256d * 100d,
+            CumulativePacketsLost: cumulativePacketsLost);
+    }
+}
+
 public sealed record PeerConnectionDiagnostics(
     string ViewerId,
     PeerConnectionState State,
     string? SelectedCandidatePair = null,
     TimeSpan? EstimatedRoundTripTime = null,
-    AudioSendDiagnostics? AudioSend = null);
+    AudioSendDiagnostics? AudioSend = null,
+    AudioReceptionDiagnostics? AudioReceive = null);
 
 public sealed record WebRtcPublisherDiagnostics(
     int ViewerConnectionCount,

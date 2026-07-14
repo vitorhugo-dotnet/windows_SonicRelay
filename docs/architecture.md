@@ -4,12 +4,12 @@
 
 ```mermaid
 flowchart TD
-    App[SonicRelay.Windows.App] --> Presentation[SonicRelay.Windows.Presentation]
-    App --> Core[SonicRelay.Windows.Core]
-    App --> ApiClient[SonicRelay.Windows.ApiClient]
-    App --> Signaling[SonicRelay.Windows.Signaling]
-    App --> Audio[SonicRelay.Windows.Audio]
-    App --> WebRtc[SonicRelay.Windows.WebRtc]
+    Desktop[SonicRelay.Windows.Desktop] --> Presentation[SonicRelay.Windows.Presentation]
+    Desktop --> Core[SonicRelay.Windows.Core]
+    Desktop --> ApiClient[SonicRelay.Windows.ApiClient]
+    Desktop --> Signaling[SonicRelay.Windows.Signaling]
+    Desktop --> Audio[SonicRelay.Windows.Audio]
+    Desktop --> WebRtc[SonicRelay.Windows.WebRtc]
     Presentation --> Core
     Presentation --> ApiClient
     Presentation --> Signaling
@@ -22,7 +22,7 @@ flowchart TD
     PresentationTests[SonicRelay.Windows.Presentation.Tests] --> Presentation
 ```
 
-- **App** is the WinUI 3 shell: window/tray/notification platform adapters, XAML pages, and nothing that another desktop shell would need to duplicate.
+- **Desktop** is the Avalonia UI shell: the cross-platform window/tray/pages, plus the Windows platform adapters (WASAPI capture composition, tray). It replaced the original WinUI 3 shell once the Avalonia shell reached functional parity (issue #32); the WinUI project has been retired.
 - **Presentation** is the shared, platform-neutral application layer: the publisher workflow, runtime composition (`PublisherRuntime`), capture→WebRTC pump (`WebRtcAudioBridge`), view models, the interface state machine (`PublisherUiState`), and the platform contracts under `Presentation/Platform`.
 - **Core** will hold application-independent domain state and rules.
 - **ApiClient** will implement typed backend HTTP communication.
@@ -57,10 +57,10 @@ never mixing a UI rewrite with a new audio-capture implementation.
 Target layout:
 
 ```text
-SonicRelay.Desktop            shared Avalonia UI (future)
+SonicRelay.Windows.Desktop       shared Avalonia UI shell (Windows today, Linux later)
 SonicRelay.Windows.Presentation  shared workflow, runtime composition, view models, UI states
 SonicRelay.Windows.{Core, ApiClient, Signaling, WebRtc, Audio}  shared capabilities
-Platform adapters (Windows)   WASAPI loopback, Win32 tray, WinUI window lifecycle
+Platform adapters (Windows)   WASAPI loopback, Avalonia tray, window lifecycle
 Platform adapters (Linux)     PipeWire capture, StatusNotifier tray, XDG autostart (future)
 ```
 

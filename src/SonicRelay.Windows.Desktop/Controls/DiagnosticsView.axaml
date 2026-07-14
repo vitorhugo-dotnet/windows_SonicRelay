@@ -1,0 +1,9 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:SonicRelay.Windows.Desktop.Controls"
+             xmlns:vm="using:SonicRelay.Windows.Desktop.ViewModels"
+             x:Class="SonicRelay.Windows.Desktop.Controls.DiagnosticsView"
+             x:DataType="vm:DashboardShellViewModel">
+  <!-- The technical console fills this destination as a full-height event log. -->
+  <controls:TechnicalConsole Margin="24" />
+</UserControl>
