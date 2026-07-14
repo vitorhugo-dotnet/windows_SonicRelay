@@ -20,10 +20,10 @@ permissions:
 
 env:
   SOLUTION_PATH: SonicRelay.Windows.slnx
-  APP_PROJECT_PATH: src/SonicRelay.Windows.App/SonicRelay.Windows.App.csproj
+  APP_PROJECT_PATH: src/SonicRelay.Windows.Desktop/SonicRelay.Windows.Desktop.csproj
   CONFIGURATION: Release
   RUNTIME_ID: win-x64
-  APP_EXE_NAME: SonicRelay.Windows.App.exe
+  APP_EXE_NAME: SonicRelay.Windows.Desktop.exe
   PRODUCT_NAME: SonicRelay.WindowsPublisher
 
 jobs:
@@ -132,8 +132,6 @@ jobs:
             --runtime $env:RUNTIME_ID `
             --self-contained true `
             --no-restore `
-            -p:WindowsPackageType=None `
-            -p:WindowsAppSDKSelfContained=true `
             -p:PublishSingleFile=false `
             -p:DebugType=embedded `
             -o $publishDir
@@ -158,8 +156,6 @@ jobs:
             --runtime $env:RUNTIME_ID `
             --self-contained true `
             --no-restore `
-            -p:WindowsPackageType=None `
-            -p:WindowsAppSDKSelfContained=true `
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true `

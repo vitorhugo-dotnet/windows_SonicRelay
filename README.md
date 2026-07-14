@@ -8,7 +8,7 @@ Installing, configuring, and running the Windows Publisher must not require admi
 
 ## Current status
 
-This repository contains the .NET 10 and WinUI 3 foundation, typed backend HTTP clients, and the authenticated WebSocket signaling client. WASAPI loopback capture and WebRTC/Opus publishing remain planned.
+This repository contains the .NET 10 publisher: a cross-platform **Avalonia** desktop shell (Windows today, Linux later — issue #32), typed backend HTTP clients, the authenticated WebSocket signaling client, WASAPI loopback capture, and WebRTC/Opus publishing.
 
 ## Prerequisites
 
@@ -47,7 +47,7 @@ Package artifacts are uploaded back to the workflow run. Pushing a tag matching 
 
 The package flow keeps the app unpackaged and per-user. It does not introduce services, drivers, firewall changes, machine-wide writes, or an administrator requirement for normal usage. The generated packages are currently unsigned.
 
-The app is an unpackaged WinUI 3 executable. Select `SonicRelay.Windows.App` as the startup project when launching it from an IDE.
+The app is an unpackaged Avalonia executable. Select `SonicRelay.Windows.Desktop` as the startup project when launching it from an IDE.
 
 ## Download a release
 
@@ -88,6 +88,6 @@ The WebSocket carries signaling control messages only. It does not carry audio; 
 5. WebRTC/Opus publication with one peer connection per viewer.
 6. Reliability, diagnostics, packaging, and release automation.
 
-A shared cross-platform desktop shell (Windows and, later, Linux) is being built in Avalonia UI behind the current WinUI app — see [the Avalonia desktop shell notes](docs/avalonia-desktop-shell.md) (issue #32, phase 2).
+The desktop shell is a shared cross-platform Avalonia UI app (Windows today, Linux later) — see [the Avalonia desktop shell notes](docs/avalonia-desktop-shell.md) (issue #32). It replaced the original WinUI 3 shell once it reached functional parity.
 
 See [the publisher specification](docs/windows-publisher.md), [architecture notes](docs/architecture.md), [non-admin checklist](docs/non-admin-checklist.md), and [release smoke test](docs/release-smoke-test.md) for the planned system boundaries and release gates.

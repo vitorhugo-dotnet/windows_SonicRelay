@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/SonicRelay.Windows.ApiClient/SonicRelay.Windows.ApiClient.csproj" />
-    <Project Path="src/SonicRelay.Windows.App/SonicRelay.Windows.App.csproj" />
     <Project Path="src/SonicRelay.Windows.Audio/SonicRelay.Windows.Audio.csproj" />
     <Project Path="src/SonicRelay.Windows.Core/SonicRelay.Windows.Core.csproj" />
     <Project Path="src/SonicRelay.Windows.Signaling/SonicRelay.Windows.Signaling.csproj" />

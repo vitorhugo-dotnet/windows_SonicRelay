@@ -239,4 +239,4 @@ Exported diagnostic reports are designed to be safe to attach to a support reque
 
 ## Current deliverable
 
-The bootstrap provides a WinUI 3 application, capability-oriented class libraries, focused test projects, shared build settings, and documentation. It deliberately contains no simulated endpoints or placeholder production behavior.
+The publisher provides an Avalonia desktop application (which replaced the original WinUI 3 shell — issue #32), capability-oriented class libraries, focused test projects, shared build settings, and documentation. It deliberately contains no simulated endpoints or placeholder production behavior.
