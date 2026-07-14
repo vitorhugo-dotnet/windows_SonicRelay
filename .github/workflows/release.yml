@@ -93,6 +93,11 @@ jobs:
           "target-sha=$targetSha" >> $env:GITHUB_OUTPUT
           "pr-number=$prNumber" >> $env:GITHUB_OUTPUT
 
+      - name: Restore Windows x64 publish dependencies
+        run: >-
+          dotnet restore src/SonicRelay.Windows.Desktop/SonicRelay.Windows.Desktop.csproj
+          --runtime win-x64
+
       - name: Publish portable Windows x64 app
         run: >-
           dotnet publish src/SonicRelay.Windows.Desktop/SonicRelay.Windows.Desktop.csproj
