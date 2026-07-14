@@ -167,7 +167,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         Auth.IsBusy = state?.IsBusy ?? false;
         Auth.ErrorMessage = ShowLogin ? state?.ErrorMessage : null;
         RaiseCommandStates();
+        RaisePropertyChanged(nameof(KeepRunningInTray));
+        Changed?.Invoke();
     }
+
+    /// <summary>Raised after every state rebuild so the tray/background controller can refresh.</summary>
+    public event Action? Changed;
+
+    /// <summary>The latest publisher snapshot the shell is rendering (null before a runtime attaches).</summary>
+    public PublisherSnapshot? CurrentSnapshot => snapshot;
+
+    /// <summary>Whether closing the window should keep the app alive in the tray for the current state.</summary>
+    public bool KeepRunningInTray => Shell.Capabilities.KeepsRunningInTray;
 
     private bool HasWorkflow => workflow is not null;
 

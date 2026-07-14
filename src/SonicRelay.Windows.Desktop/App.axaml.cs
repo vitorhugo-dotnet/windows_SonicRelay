@@ -28,7 +28,19 @@ public partial class App : Application
                 ? new MainWindowViewModel()
                 : MainWindowViewModel.CreatePreview();
 
-            desktop.MainWindow = new MainWindow { DataContext = viewModel };
+            var mainWindow = new MainWindow { DataContext = viewModel };
+            desktop.MainWindow = mainWindow;
+
+            // Tray + minimize/close-to-tray + reconnect (issue #32). Never let a missing tray
+            // backend stop the app from launching.
+            try
+            {
+                var tray = new DesktopTrayController(desktop, mainWindow, viewModel);
+                desktop.Exit += (_, _) => tray.Dispose();
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+            }
 
             if (OperatingSystem.IsWindows())
                 _ = AttachConfiguredRuntimeAsync(viewModel);

@@ -83,12 +83,22 @@ rail) drives `CurrentPage` and the top-bar title.
 Both are built from the runtime's stores on `Attach`; without an attached runtime they are
 `IsConnected = false` and read-only (the standalone preview and the headless tests).
 
+## Tray and background
+
+`DesktopTrayController` wires the platform-agnostic, unit-tested `TrayApplicationController`
+(in `Presentation`) to an Avalonia `TrayIcon` and the main window: a status tooltip and context
+menu built from the publisher snapshot (Open / Start-Stop stream / Copy code / Reconnect
+signaling / Quit), **minimise- and close-to-tray** while a session is active or the state keeps
+running in the tray, and a tray **Reconnect signaling** action. All decisions come from the
+controller; the Desktop type only performs the UI side effects (show/hide, clipboard, shutdown),
+and the tray is created defensively so a missing tray backend never blocks launch.
+
 ## Scope boundaries
 
 - WinUI stays the shipped UI until the Avalonia shell reaches minimum functional parity; this
   work runs **side by side** and does not replace it.
-- Tray/minimize-to-tray and reconnection UX, RTT plumbing, and flipping the default from WinUI to
-  Avalonia once parity is validated are later phase-2 slices.
+- RTT plumbing and flipping the default from WinUI to Avalonia once parity is validated are the
+  remaining phase-2 items.
 - Linux/PipeWire capture and packaging are phases 3–5.
 
 ## Running and testing

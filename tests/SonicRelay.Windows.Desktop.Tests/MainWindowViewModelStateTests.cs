@@ -84,6 +84,24 @@ public sealed class MainWindowViewModelStateTests
     }
 
     [Fact]
+    public void Fresh_view_model_does_not_keep_running_in_tray()
+    {
+        var vm = new MainWindowViewModel();
+
+        // Logged out: closing the window should not keep the app alive in the tray.
+        Assert.False(vm.KeepRunningInTray);
+        Assert.Null(vm.CurrentSnapshot);
+    }
+
+    [Fact]
+    public void A_streaming_preview_keeps_running_in_tray()
+    {
+        var vm = MainWindowViewModel.CreatePreview();
+
+        Assert.True(vm.KeepRunningInTray);
+    }
+
+    [Fact]
     public void A_null_selection_keeps_the_last_page()
     {
         var vm = new MainWindowViewModel();
