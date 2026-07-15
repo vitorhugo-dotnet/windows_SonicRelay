@@ -123,6 +123,16 @@ public sealed class SipSorceryPeerConnection : IWebRtcPeerConnection
         return new WebRtcSessionDescription("offer", offer.sdp);
     }
 
+    public async Task<WebRtcSessionDescription> CreateIceRestartOfferAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        // Generates new ICE ufrag/pwd on the existing connection; the offer that follows
+        // carries them so the remote renegotiates ICE without losing the negotiated audio
+        // track or resetting sender/receiver report correlation.
+        connection.restartIce();
+        return await CreateOfferAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public Task ApplyAnswerAsync(WebRtcSessionDescription answer, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(answer);

@@ -16,6 +16,18 @@ internal sealed class ReconnectDelay : IReconnectDelay
         Task.Delay(delay, cancellationToken);
 }
 
+/// <summary>Supplies the random component of the reconnect backoff's jitter.</summary>
+internal interface IReconnectJitter
+{
+    /// <summary>Returns a value in [-1, 1] scaling the policy's <see cref="SignalingReconnectPolicy.JitterRatio"/>.</summary>
+    double NextRatio();
+}
+
+internal sealed class ReconnectJitter : IReconnectJitter
+{
+    public double NextRatio() => (Random.Shared.NextDouble() * 2) - 1;
+}
+
 /// <summary>
 /// Controls how the signaling client reconnects after a transient drop. Uses
 /// capped exponential backoff and, by default, retries indefinitely so a long
@@ -28,6 +40,13 @@ public sealed record SignalingReconnectPolicy
     public int? MaxAttempts { get; init; }
     public TimeSpan BaseDelay { get; init; } = TimeSpan.FromSeconds(1);
     public TimeSpan MaxDelay { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Fraction of the computed backoff delay randomized in both directions (e.g. 0.2 means
+    /// ±20%), so publishers dropped by the same outage don't all retry the API in lockstep.
+    /// Zero disables jitter.
+    /// </summary>
+    public double JitterRatio { get; init; } = 0.2;
 }
 
 public sealed class SignalingClient : ISignalingClient
@@ -37,6 +56,7 @@ public sealed class SignalingClient : ISignalingClient
     private readonly IReadOnlyList<ISignalingMessageHandler> handlers;
     private readonly IWebSocketConnectionFactory connectionFactory;
     private readonly IReconnectDelay reconnectDelay;
+    private readonly IReconnectJitter reconnectJitter;
     private readonly SignalingReconnectPolicy reconnectPolicy;
     private readonly SemaphoreSlim lifecycleLock = new(1, 1);
     private readonly SemaphoreSlim sendLock = new(1, 1);
@@ -60,7 +80,8 @@ public sealed class SignalingClient : ISignalingClient
         IEnumerable<ISignalingMessageHandler> handlers,
         IWebSocketConnectionFactory connectionFactory,
         IReconnectDelay reconnectDelay,
-        SignalingReconnectPolicy? reconnectPolicy = null)
+        SignalingReconnectPolicy? reconnectPolicy = null,
+        IReconnectJitter? reconnectJitter = null)
     {
         this.configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         this.tokenStore = tokenStore ?? throw new ArgumentNullException(nameof(tokenStore));
@@ -68,6 +89,7 @@ public sealed class SignalingClient : ISignalingClient
         this.connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
         this.reconnectDelay = reconnectDelay ?? throw new ArgumentNullException(nameof(reconnectDelay));
         this.reconnectPolicy = reconnectPolicy ?? new SignalingReconnectPolicy();
+        this.reconnectJitter = reconnectJitter ?? new ReconnectJitter();
     }
 
     public SignalingConnectionState State { get; private set; } = SignalingConnectionState.Disconnected;
@@ -345,7 +367,15 @@ public sealed class SignalingClient : ISignalingClient
         var capped = ticks < 0 || ticks > reconnectPolicy.MaxDelay.Ticks
             ? reconnectPolicy.MaxDelay.Ticks
             : ticks;
-        return TimeSpan.FromTicks(capped);
+
+        var jitterRatio = Math.Clamp(reconnectPolicy.JitterRatio, 0, 1);
+        if (jitterRatio <= 0) return TimeSpan.FromTicks(capped);
+
+        // Randomize within ±jitterRatio of the capped delay so publishers dropped by the
+        // same outage don't all hammer the API in lockstep.
+        var jitterFraction = jitterRatio * Math.Clamp(reconnectJitter.NextRatio(), -1, 1);
+        var jittered = Math.Clamp(capped * (1 + jitterFraction), 0d, (double)reconnectPolicy.MaxDelay.Ticks);
+        return TimeSpan.FromTicks((long)jittered);
     }
 
     private async Task CloseFromReceiveLoopAsync()

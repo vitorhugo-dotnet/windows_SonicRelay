@@ -149,6 +149,15 @@ public interface IWebRtcPeerConnection : IAsyncDisposable
     event Func<WebRtcIceCandidate, CancellationToken, Task>? LocalIceCandidateReady;
     event Action? DiagnosticsChanged;
     Task<WebRtcSessionDescription> CreateOfferAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Restarts ICE on this peer connection and produces a fresh offer carrying the new ICE
+    /// credentials, without discarding the connection or its negotiated audio track. Used to
+    /// recover a peer whose viewer reconnected (or whose ICE degraded) rather than tearing
+    /// down and rebuilding the whole connection.
+    /// </summary>
+    Task<WebRtcSessionDescription> CreateIceRestartOfferAsync(CancellationToken cancellationToken = default);
+
     Task ApplyAnswerAsync(WebRtcSessionDescription answer, CancellationToken cancellationToken = default);
     Task AddRemoteIceCandidateAsync(WebRtcIceCandidate candidate, CancellationToken cancellationToken = default);
     Task SendAudioFrameAsync(WebRtcAudioFrame frame, CancellationToken cancellationToken = default);
@@ -168,6 +177,13 @@ public interface IPeerConnectionManager : IAsyncDisposable
     event Func<string, WebRtcIceCandidate, CancellationToken, Task>? LocalIceCandidateReady;
     event Action? DiagnosticsChanged;
     Task<ViewerPeerRegistration> RegisterViewerAsync(string viewerId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Requests an ICE-restart offer from the existing peer connection for <paramref name="viewerId"/>,
+    /// or returns <c>null</c> if no peer is registered for it yet.
+    /// </summary>
+    Task<WebRtcSessionDescription?> RequestIceRestartAsync(string viewerId, CancellationToken cancellationToken = default);
+
     Task ApplyAnswerAsync(string viewerId, WebRtcSessionDescription answer, CancellationToken cancellationToken = default);
     Task AddRemoteIceCandidateAsync(string viewerId, WebRtcIceCandidate candidate, CancellationToken cancellationToken = default);
     Task PushAudioFrameAsync(WebRtcAudioFrame frame, CancellationToken cancellationToken = default);
