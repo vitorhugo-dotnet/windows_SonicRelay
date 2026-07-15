@@ -4,9 +4,12 @@
 
 The publisher still loses connection when the window is minimized, the app is closed, or
 even while it stays open in the foreground, and today's diagnostics can't say why. Extend
-the existing `DiagnosticLog`/`DiagnosticReportExporter` pair so a user can capture a
-support-ready log covering exactly what happened around a drop, export it, clear it, and
-never accumulate an unbounded pile of `.jsonl` files on disk.
+`DiagnosticLog` so a user can capture a support-ready log covering exactly what happened
+around a drop, export it as one file, clear it, and never accumulate an unbounded pile of
+`.jsonl` files on disk. `DiagnosticReportExporter` is a separate, pre-existing feature (a
+point-in-time Markdown status snapshot) that is also not wired to any button today; this
+work does not touch it — the user asked for the actual log history, which lives in
+`DiagnosticLog`'s `.jsonl` files, not a status snapshot.
 
 ## Scope
 
@@ -33,6 +36,11 @@ server-side change (tracked separately in `dotnet_SonicRelay`).
   `RecentEvents` update inside the same `writeLock` critical section as the disk append,
   so both mutations serialize with `ClearAsync` as one unit — only then does holding
   `writeLock` in `ClearAsync` guarantee no write can reappear after a clear.
+- **Export**: a new `ExportAsync()` method concatenates every retained `publisher-*.jsonl`
+  file (oldest first) into a single file,
+  `<diagnostics-directory>/sonicrelay-logs-{yyyyMMdd-HHmmss}.jsonl`, and returns its path.
+  Every line is already redacted at write time, so a byte-level concatenation needs no
+  further sanitization.
 
 New call sites write additional `DiagnosticEvent` categories through the existing
 `WriteDiagnosticAsync` wrapper in `PublisherRuntime`:
@@ -50,10 +58,27 @@ New call sites write additional `DiagnosticEvent` categories through the existin
 
 ## UI
 
-The Diagnostics page gets a **Clear logs** button next to the existing **Export** button.
-Clearing shows the same sanitized-feedback pattern the export path uses (success or a
-sanitized failure message, never a raw exception). A confirmation prompt is required
-before clearing, since it is destructive and not undoable.
+`DiagnosticReportExporter` exists but nothing in the UI calls it yet — there is no Export
+button today, only the read-only `TechnicalConsole` activity log on the Diagnostics page.
+This work adds both **Export logs** and **Clear logs** as `RelayCommand`s on
+`MainWindowViewModel` (the same pattern as `CreateSessionCommand`, `RetryCommand`, etc.),
+surfaced through a new `DiagnosticsActionMessage` string property for sanitized
+success/failure feedback (never a raw exception). `DiagnosticsView.axaml` stops rebinding
+its own `DataContext` to `Shell` and instead inherits `MainWindowViewModel` from its
+parent (`TechnicalConsole` keeps its existing `DashboardShellViewModel` contract by
+getting `DataContext="{Binding Shell}"` set explicitly where it's placed inside
+`DiagnosticsView`), so the new buttons can bind directly to the view model that owns the
+runtime.
+
+The codebase has no modal/confirmation-dialog infrastructure anywhere (checked: no
+`ContentDialog`, `MessageBox`, or dialog service), and every existing destructive-ish
+action (`EndSessionCommand`, `LogoutCommand`) executes immediately with no confirmation.
+Clear follows that same convention but arms itself first: the first click flips the
+button to an armed "Confirm clear?" state (a bindable `ClearLogsArmed` bool) without
+deleting anything; a second click while armed performs the delete. Any other command
+execution or navigating away disarms it. This avoids introducing new dialog
+infrastructure while still requiring a deliberate second action for a non-undoable
+operation.
 
 ## Data and safety
 
