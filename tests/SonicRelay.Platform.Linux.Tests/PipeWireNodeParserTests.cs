@@ -72,4 +72,11 @@ public sealed class PipeWireNodeParserTests
     {
         Assert.Empty(PipeWireNodeParser.ParseSinks(string.Empty));
     }
+
+    [Fact]
+    public void ParseSinksReturnsEmptyWhenTypeFieldIsNotAString()
+    {
+        var sinks = PipeWireNodeParser.ParseSinks("""[{"type": 123, "info": {"props": {"media.class": "Audio/Sink", "node.name": "x"}}}]""");
+        Assert.Empty(sinks);
+    }
 }

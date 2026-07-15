@@ -42,6 +42,7 @@ public static class PipeWireNodeParser
         node = null!;
         if (element.ValueKind != JsonValueKind.Object) return false;
         if (!element.TryGetProperty("type", out var typeElement) ||
+            typeElement.ValueKind != JsonValueKind.String ||
             typeElement.GetString() != "PipeWire:Interface:Node") return false;
         if (!element.TryGetProperty("info", out var info) || info.ValueKind != JsonValueKind.Object) return false;
         if (!info.TryGetProperty("props", out var props) || props.ValueKind != JsonValueKind.Object) return false;
