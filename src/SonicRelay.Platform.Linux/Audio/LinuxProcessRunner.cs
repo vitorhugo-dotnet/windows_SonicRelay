@@ -54,9 +54,10 @@ public sealed class LinuxProcessRunner : ILinuxProcessRunner
         {
             await process.WaitForExitAsync(timeoutCancellation.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
             KillTree(process);
+            if (cancellationToken.IsCancellationRequested) throw;
             throw new TimeoutException($"{executable} did not exit within {timeout}.");
         }
 
@@ -92,19 +93,56 @@ internal sealed class LinuxProcess : ILinuxProcess
     private const int MaxCapturedStderrChars = 8192;
     private readonly Process process;
     private readonly StringBuilder stderr = new();
+    private readonly object exitGate = new();
+    private Action<int>? exitedHandlers;
+    private int? exitCode;
     private bool disposed;
 
     public LinuxProcess(Process process)
     {
         this.process = process;
-        this.process.Exited += (_, _) => Exited?.Invoke(SafeExitCode());
+        this.process.Exited += OnProcessExited;
         this.process.ErrorDataReceived += (_, e) => { if (e.Data is not null && stderr.Length < MaxCapturedStderrChars) stderr.Append(e.Data).Append('\n'); };
         this.process.Start();
         this.process.BeginErrorReadLine();
     }
 
     public Stream StandardOutput => process.StandardOutput.BaseStream;
-    public event Action<int>? Exited;
+
+    public event Action<int>? Exited
+    {
+        add
+        {
+            bool alreadyExited;
+            int code;
+            lock (exitGate)
+            {
+                exitedHandlers += value;
+                alreadyExited = exitCode.HasValue;
+                code = exitCode.GetValueOrDefault();
+            }
+            // Replay to a late subscriber so a fast-exiting/failed-to-start process
+            // is never silently missed (issue #32 Linux adapter review finding).
+            if (alreadyExited) value?.Invoke(code);
+        }
+        remove
+        {
+            lock (exitGate) { exitedHandlers -= value; }
+        }
+    }
+
+    private void OnProcessExited(object? sender, EventArgs e)
+    {
+        var code = SafeExitCode();
+        Action<int>? handlers;
+        lock (exitGate)
+        {
+            exitCode = code;
+            handlers = exitedHandlers;
+        }
+        handlers?.Invoke(code);
+    }
+
     public string RecentStandardError => stderr.ToString();
 
     public async Task StopAsync(TimeSpan gracePeriod, CancellationToken cancellationToken)
