@@ -101,8 +101,8 @@
                               IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsSession, ElementName=RootWindow}" />
 
         <!-- Diagnostics -->
-        <controls:DiagnosticsView DataContext="{Binding Shell}"
-                                  IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsDiagnostics, ElementName=RootWindow}" />
+        <controls:DiagnosticsView
+            IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsDiagnostics, ElementName=RootWindow}" />
 
         <!-- Audio -->
         <controls:AudioView DataContext="{Binding Audio}"

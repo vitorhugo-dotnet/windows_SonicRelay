@@ -21,6 +21,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private PublisherSnapshot? snapshot;
     private bool showLogin = true;
     private NavigationItem selectedNavigation;
+    private bool clearLogsArmed;
+    private string? diagnosticsActionMessage;
 
     public MainWindowViewModel()
     {
@@ -44,6 +46,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         EndSessionCommand = new RelayCommand(() => Run(w => w.EndSessionAsync()), () => ShellCommandAvailability.EndSession(snapshot, HasWorkflow));
         RetryCommand = new RelayCommand(() => Run(w => w.ReconnectSignalingAsync()), () => ShellCommandAvailability.Retry(snapshot, Shell.Capabilities, HasWorkflow));
         LogoutCommand = new RelayCommand(() => Run(w => w.LogoutAsync()), () => ShellCommandAvailability.Logout(snapshot, Shell.Capabilities, HasWorkflow));
+        ExportDiagnosticsCommand = new RelayCommand(ExportDiagnosticsAsync, () => runtime is not null);
+        ClearDiagnosticsCommand = new RelayCommand(ClearDiagnosticsAsync, () => runtime is not null);
     }
 
     public IReadOnlyList<NavigationItem> Navigation { get; }
@@ -113,12 +117,38 @@ public sealed class MainWindowViewModel : ViewModelBase
     public static bool ShouldShowLogin(PublisherSnapshot? snapshot) =>
         snapshot is null || !snapshot.IsAuthenticated;
 
+    public bool ClearLogsArmed
+    {
+        get => clearLogsArmed;
+        private set => SetProperty(ref clearLogsArmed, value);
+    }
+
+    public string? DiagnosticsActionMessage
+    {
+        get => diagnosticsActionMessage;
+        private set
+        {
+            if (SetProperty(ref diagnosticsActionMessage, value))
+                RaisePropertyChanged(nameof(HasDiagnosticsActionMessage));
+        }
+    }
+
+    /// <summary>Bindable presence check, following the same pattern as <see cref="HasSessionCode"/>
+    /// rather than an Avalonia converter (there is no existing null/bool-to-visibility converter
+    /// wired up anywhere in this codebase to reuse).</summary>
+    public bool HasDiagnosticsActionMessage => diagnosticsActionMessage is not null;
+
+    public void ArmClearLogs() => ClearLogsArmed = true;
+    public void DisarmClearLogs() => ClearLogsArmed = false;
+
     public RelayCommand CreateSessionCommand { get; }
     public RelayCommand StartAudioCommand { get; }
     public RelayCommand StopAudioCommand { get; }
     public RelayCommand EndSessionCommand { get; }
     public RelayCommand RetryCommand { get; }
     public RelayCommand LogoutCommand { get; }
+    public RelayCommand ExportDiagnosticsCommand { get; }
+    public RelayCommand ClearDiagnosticsCommand { get; }
 
     /// <summary>
     /// Attaches a live publisher runtime: subscribes to workflow and WebRTC diagnostics and
@@ -185,6 +215,42 @@ public sealed class MainWindowViewModel : ViewModelBase
     private Task Run(Func<PublisherWorkflow, Task> action) =>
         workflow is null ? Task.CompletedTask : action(workflow);
 
+    private async Task ExportDiagnosticsAsync()
+    {
+        DisarmClearLogs();
+        if (runtime is null) return;
+        DiagnosticsActionMessage = await DiagnosticsActions.ExportAsync(runtime.DiagnosticLog);
+    }
+
+    private async Task ClearDiagnosticsAsync()
+    {
+        if (runtime is null) return;
+        if (!ClearLogsArmed)
+        {
+            ArmClearLogs();
+            return;
+        }
+        DisarmClearLogs();
+        DiagnosticsActionMessage = await DiagnosticsActions.ClearAsync(runtime.DiagnosticLog);
+    }
+
+    /// <summary>
+    /// Forwards a diagnostic event to the attached runtime's log, or does nothing if no
+    /// runtime is attached (the standalone preview launch). Diagnostics must never throw
+    /// into the caller, matching PublisherRuntime.WriteDiagnosticAsync's own guarantee.
+    /// </summary>
+    public void LogDiagnostic(string category, string message)
+    {
+        if (runtime is null) return;
+        _ = LogAsync(runtime.DiagnosticLog, category, message);
+
+        static async Task LogAsync(SonicRelay.Windows.Core.Diagnostics.DiagnosticLog log, string category, string message)
+        {
+            try { await log.WriteAsync(category, message); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ObjectDisposedException) { }
+        }
+    }
+
     private void RaiseCommandStates()
     {
         CreateSessionCommand.RaiseCanExecuteChanged();
@@ -193,6 +259,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         EndSessionCommand.RaiseCanExecuteChanged();
         RetryCommand.RaiseCanExecuteChanged();
         LogoutCommand.RaiseCanExecuteChanged();
+        ExportDiagnosticsCommand.RaiseCanExecuteChanged();
+        ClearDiagnosticsCommand.RaiseCanExecuteChanged();
     }
 
     private static void Dispatch(Action action)

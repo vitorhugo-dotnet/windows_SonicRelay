@@ -191,6 +191,33 @@ public sealed class WebRtcPublisherTests
     }
 
     [Fact]
+    public async Task ParticipantReconnectedRaisesIceRestartRequestedForTheViewer()
+    {
+        var context = CreateContext();
+        await using var publisher = context.Publisher;
+        await ReadyAsync(publisher, "viewer-1");
+        var requested = new List<string>();
+        publisher.IceRestartRequested += requested.Add;
+
+        await publisher.HandleAsync(new(SignalingMessageTypes.ParticipantReconnected, "session-1", From: "viewer-1"));
+
+        Assert.Equal(["viewer-1"], requested);
+    }
+
+    [Fact]
+    public async Task ParticipantReconnectedForAnUnregisteredViewerDoesNotRaiseIceRestartRequested()
+    {
+        var context = CreateContext();
+        await using var publisher = context.Publisher;
+        var requested = new List<string>();
+        publisher.IceRestartRequested += requested.Add;
+
+        await publisher.HandleAsync(new(SignalingMessageTypes.ParticipantReconnected, "session-1", From: "viewer-1"));
+
+        Assert.Empty(requested);
+    }
+
+    [Fact]
     public async Task ParticipantReconnectedForAnUnregisteredViewerFallsBackToAFreshOffer()
     {
         var context = CreateContext();
@@ -284,6 +311,8 @@ public sealed class WebRtcPublisherTests
         public List<SignalingMessageEnvelope> Messages { get; } = [];
         public SignalingConnectionState State => SignalingConnectionState.Connected;
         public event Action<SignalingConnectionState>? StateChanged { add { } remove { } }
+        public event Action<int>? ReconnectAttempting { add { } remove { } }
+        public event Action<SignalingCloseReason>? Closed { add { } remove { } }
         public Task ConnectAsync(string sessionId, string deviceId, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CloseAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task SendAsync(SignalingMessageEnvelope message, CancellationToken cancellationToken = default)

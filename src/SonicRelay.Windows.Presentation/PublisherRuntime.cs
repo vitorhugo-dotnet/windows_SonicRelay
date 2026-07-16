@@ -40,7 +40,8 @@ public sealed class PublisherRuntime : IAsyncDisposable
         RelayPreferenceStore relayPreference,
         AudioQualityStore audioQuality,
         IAudioCaptureService audioCapture,
-        AudioOutputPreferenceStore audioOutput)
+        AudioOutputPreferenceStore audioOutput,
+        DiagnosticLog diagnosticLog)
     {
         this.httpClient = httpClient;
         this.peers = peers;
@@ -52,7 +53,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
         AudioQuality = audioQuality;
         AudioCapture = audioCapture;
         AudioOutput = audioOutput;
-        DiagnosticLog = new DiagnosticLog();
+        DiagnosticLog = diagnosticLog;
         ReportExporter = new DiagnosticReportExporter();
         Workflow.StateChanged += OnWorkflowStateChanged;
         _ = WriteDiagnosticAsync("runtime", "Publisher runtime configured.", new Dictionary<string, string>
@@ -93,6 +94,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
         var tokenStore = new UserScopedTokenStore();
         var http = new HttpClient { BaseAddress = normalized, Timeout = TimeSpan.FromSeconds(30) };
 
+        var diagnosticLog = new DiagnosticLog();
         // The WebRTC publisher needs the signaling client to send offers/candidates,
         // but the client takes its handlers up front — register the publisher through
         // a composite handler after both exist.
@@ -117,6 +119,10 @@ public sealed class PublisherRuntime : IAsyncDisposable
         var webRtcPublisher = new WebRtcPublisher(signaling, peers);
         signalingHandlers.Register(webRtcPublisher);
 
+        signaling.ReconnectAttempting += attempt => LogReconnectAttempt(diagnosticLog, attempt);
+        signaling.Closed += reason => LogSignalingClosed(diagnosticLog, reason);
+        webRtcPublisher.IceRestartRequested += viewerId => LogIceRestart(diagnosticLog, viewerId);
+
         var audio = audioCapture;
         var audioOutput = new AudioOutputPreferenceStore();
         // Restore the previously selected output device (null = system default).
@@ -129,7 +135,7 @@ public sealed class PublisherRuntime : IAsyncDisposable
             signaling,
             audio,
             Environment.MachineName);
-        return new PublisherRuntime(http, workflow, normalized, peers, webRtcPublisher, audioBridge, relayPreference, audioQuality, audio, audioOutput);
+        return new PublisherRuntime(http, workflow, normalized, peers, webRtcPublisher, audioBridge, relayPreference, audioQuality, audio, audioOutput, diagnosticLog);
     }
 
     private void OnWorkflowStateChanged(PublisherSnapshot state)
@@ -166,6 +172,38 @@ public sealed class PublisherRuntime : IAsyncDisposable
         {
             // Diagnostics must never interrupt publisher operation.
         }
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> NoProperties = new Dictionary<string, string>();
+
+    private static async void LogReconnectAttempt(DiagnosticLog log, int attempt)
+    {
+        try { await log.WriteAsync("reconnect-attempt", $"Signaling reconnect attempt {attempt + 1}.", NoProperties); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ObjectDisposedException) { }
+    }
+
+    private static async void LogSignalingClosed(DiagnosticLog log, SignalingCloseReason reason)
+    {
+        try
+        {
+            await log.WriteAsync("signaling-closed", "Signaling connection closed.", new Dictionary<string, string>
+            {
+                ["reason"] = reason.ToString()
+            });
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ObjectDisposedException) { }
+    }
+
+    private static async void LogIceRestart(DiagnosticLog log, string viewerId)
+    {
+        try
+        {
+            await log.WriteAsync("ice-restart", "ICE restart requested for a reconnected viewer.", new Dictionary<string, string>
+            {
+                ["viewerId"] = viewerId
+            });
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ObjectDisposedException) { }
     }
 
     public async ValueTask DisposeAsync()

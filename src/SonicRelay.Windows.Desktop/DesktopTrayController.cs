@@ -125,6 +125,11 @@ public sealed class DesktopTrayController : IDisposable
         {
             e.Cancel = true;
             window.Hide();
+            viewModel.LogDiagnostic("window-state", "Window close intercepted; kept running in tray.");
+        }
+        else
+        {
+            viewModel.LogDiagnostic("window-state", "Window closing for real (no active session to keep alive).");
         }
     }
 
@@ -137,6 +142,7 @@ public sealed class DesktopTrayController : IDisposable
             // Restore the stored state so the next Show opens normally rather than minimised.
             window.WindowState = WindowState.Normal;
             window.Hide();
+            viewModel.LogDiagnostic("window-state", "Minimized to tray.");
         }
     }
 

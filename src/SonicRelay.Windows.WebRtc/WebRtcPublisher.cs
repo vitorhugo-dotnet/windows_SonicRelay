@@ -24,6 +24,7 @@ public sealed class WebRtcPublisher : IWebRtcPublisher
         new(peers.ViewerCount, peers.GetDiagnostics(), lastError);
 
     public event Action<WebRtcPublisherDiagnostics>? DiagnosticsChanged;
+    public event Action<string>? IceRestartRequested;
 
     public async Task HandleAsync(SignalingMessageEnvelope message, CancellationToken cancellationToken = default)
     {
@@ -153,6 +154,7 @@ public sealed class WebRtcPublisher : IWebRtcPublisher
                 await OfferToViewerAsync(sessionId, viewerId, cancellationToken);
                 return;
             }
+            IceRestartRequested?.Invoke(viewerId);
             await SendOfferAsync(sessionId, viewerId, restartOffer, cancellationToken);
         }
         catch

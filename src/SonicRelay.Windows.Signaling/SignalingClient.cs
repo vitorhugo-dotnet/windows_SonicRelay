@@ -49,6 +49,9 @@ public sealed record SignalingReconnectPolicy
     public double JitterRatio { get; init; } = 0.2;
 }
 
+/// <summary>Why a signaling connection ended, for diagnostics — never derived from free text.</summary>
+public enum SignalingCloseReason { NormalClosure, SessionEnded, ReconnectExhausted, SessionGone }
+
 public sealed class SignalingClient : ISignalingClient
 {
     private readonly PublisherConfiguration configuration;
@@ -94,6 +97,8 @@ public sealed class SignalingClient : ISignalingClient
 
     public SignalingConnectionState State { get; private set; } = SignalingConnectionState.Disconnected;
     public event Action<SignalingConnectionState>? StateChanged;
+    public event Action<int>? ReconnectAttempting;
+    public event Action<SignalingCloseReason>? Closed;
 
     /// <summary>
     /// Raised when a registered message handler throws. The receive loop keeps
@@ -187,6 +192,7 @@ public sealed class SignalingClient : ISignalingClient
         }
         await DisposeConnectionAsync();
         ClearActiveIdentity();
+        Closed?.Invoke(SignalingCloseReason.NormalClosure);
         SetState(SignalingConnectionState.Closed);
     }
 
@@ -307,6 +313,7 @@ public sealed class SignalingClient : ISignalingClient
                         await HandleSessionGoneAsync();
                         return;
                     default:
+                        Closed?.Invoke(SignalingCloseReason.ReconnectExhausted);
                         SetState(SignalingConnectionState.Faulted);
                         return;
                 }
@@ -326,6 +333,7 @@ public sealed class SignalingClient : ISignalingClient
         SetState(SignalingConnectionState.Reconnecting);
         for (var attempt = 0; reconnectPolicy.MaxAttempts is null || attempt < reconnectPolicy.MaxAttempts; attempt++)
         {
+            ReconnectAttempting?.Invoke(attempt);
             try
             {
                 await reconnectDelay.DelayAsync(ReconnectDelayFor(attempt), cancellationToken);
@@ -355,6 +363,7 @@ public sealed class SignalingClient : ISignalingClient
     {
         await DisposeConnectionAsync();
         ClearActiveIdentity();
+        Closed?.Invoke(SignalingCloseReason.SessionGone);
         SetState(SignalingConnectionState.Closed);
     }
 
@@ -389,6 +398,7 @@ public sealed class SignalingClient : ISignalingClient
         }
         await DisposeConnectionAsync();
         ClearActiveIdentity();
+        Closed?.Invoke(SignalingCloseReason.SessionEnded);
         SetState(SignalingConnectionState.Closed);
     }
 
