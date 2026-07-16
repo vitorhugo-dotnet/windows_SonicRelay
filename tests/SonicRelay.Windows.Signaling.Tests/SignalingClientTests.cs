@@ -288,6 +288,94 @@ public sealed class SignalingClientTests
         Assert.NotEmpty(faults);
     }
 
+    [Fact]
+    public async Task ReconnectAttemptingFiresOnceForEachAttemptBeforeItsDelay()
+    {
+        var initial = new FakeWebSocketConnection();
+        var replacement = new FakeWebSocketConnection();
+        var factory = new FakeWebSocketFactory(initial, replacement);
+        var delay = new ImmediateReconnectDelay();
+        var attempts = new List<int>();
+        await using var client = CreateClient(factory, delay: delay);
+        client.ReconnectAttempting += attempts.Add;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await client.ConnectAsync("session-1", "device-1");
+
+        initial.QueueClose(WebSocketCloseStatus.EndpointUnavailable);
+        await WaitUntilAsync(() => factory.CreatedCount == 2 && client.State == SignalingConnectionState.Connected, timeout.Token);
+
+        Assert.Equal([0], attempts);
+    }
+
+    [Fact]
+    public async Task ClosedFiresWithNormalClosureAfterAnExplicitClose()
+    {
+        var reasons = new List<SignalingCloseReason>();
+        await using var client = CreateClient(new FakeWebSocketFactory(new FakeWebSocketConnection()));
+        client.Closed += reasons.Add;
+        await client.ConnectAsync("session-1", "device-1");
+
+        await client.CloseAsync();
+
+        Assert.Equal([SignalingCloseReason.NormalClosure], reasons);
+    }
+
+    [Fact]
+    public async Task ClosedFiresWithSessionEndedWhenTheServerEndsTheSession()
+    {
+        var socket = new FakeWebSocketConnection();
+        var reasons = new List<SignalingCloseReason>();
+        await using var client = CreateClient(new FakeWebSocketFactory(socket));
+        client.Closed += reasons.Add;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await client.ConnectAsync("session-1", "device-1");
+
+        socket.QueueText(new SignalingMessageEnvelope(SignalingMessageTypes.SessionEnded, "session-1"));
+        await WaitUntilAsync(() => reasons.Count > 0, timeout.Token);
+
+        Assert.Equal([SignalingCloseReason.SessionEnded], reasons);
+    }
+
+    [Fact]
+    public async Task ClosedFiresWithReconnectExhaustedAfterMaxAttempts()
+    {
+        var initial = new FakeWebSocketConnection();
+        var failure = new WebSocketException("transient");
+        var factory = new FakeWebSocketFactory(
+            initial,
+            new FakeWebSocketConnection { ConnectException = failure });
+        var delay = new ImmediateReconnectDelay();
+        var reasons = new List<SignalingCloseReason>();
+        await using var client = CreateClient(factory, delay: delay, policy: new SignalingReconnectPolicy { MaxAttempts = 1 });
+        client.Closed += reasons.Add;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await client.ConnectAsync("session-1", "device-1");
+
+        initial.QueueClose(WebSocketCloseStatus.EndpointUnavailable);
+        await WaitUntilAsync(() => client.State == SignalingConnectionState.Faulted, timeout.Token);
+
+        Assert.Equal([SignalingCloseReason.ReconnectExhausted], reasons);
+    }
+
+    [Fact]
+    public async Task ClosedFiresWithSessionGoneWhenTheBackendReportsTheSessionIsGone()
+    {
+        var initial = new FakeWebSocketConnection();
+        var gone = new FakeWebSocketConnection { ConnectException = new SignalingSessionGoneException(HttpStatusCode.Gone) };
+        var factory = new FakeWebSocketFactory(initial, gone);
+        var delay = new ImmediateReconnectDelay();
+        var reasons = new List<SignalingCloseReason>();
+        await using var client = CreateClient(factory, delay: delay);
+        client.Closed += reasons.Add;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await client.ConnectAsync("session-1", "device-1");
+
+        initial.QueueClose(WebSocketCloseStatus.EndpointUnavailable);
+        await WaitUntilAsync(() => client.State == SignalingConnectionState.Closed, timeout.Token);
+
+        Assert.Equal([SignalingCloseReason.SessionGone], reasons);
+    }
+
     private static SignalingClient CreateClient(
         IWebSocketConnectionFactory factory,
         ISignalingMessageHandler? handler = null,
