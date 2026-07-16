@@ -2,11 +2,22 @@ using SonicRelay.Platform.Linux.Audio;
 
 namespace SonicRelay.Platform.Linux.Tests;
 
+/// <summary>
+/// These tests exercise <see cref="LinuxProcessRunner"/> against real Unix
+/// binaries (/bin/echo, /bin/sh, /bin/sleep, /bin/true) rather than fakes, to
+/// validate actual `Process` behavior. This repo's CI currently only runs a
+/// windows-latest job (a Linux matrix is deferred to a later phase of issue
+/// #32 — see docs/superpowers/specs/2026-07-14-linux-desktop-publisher-design.md),
+/// so each test no-ops on non-Linux hosts instead of failing on a missing
+/// binary; they still run for real on Linux (this sandbox, and eventually CI).
+/// </summary>
 public sealed class LinuxProcessRunnerTests
 {
     [Fact]
     public async Task RunAsyncCapturesStdoutAndExitCodeForARealProcess()
     {
+        if (!OperatingSystem.IsLinux()) return;
+
         var runner = new LinuxProcessRunner();
         var result = await runner.RunAsync("/bin/echo", ["hello"], TimeSpan.FromSeconds(5), CancellationToken.None);
 
@@ -17,6 +28,8 @@ public sealed class LinuxProcessRunnerTests
     [Fact]
     public async Task RunAsyncReportsNonZeroExitCode()
     {
+        if (!OperatingSystem.IsLinux()) return;
+
         var runner = new LinuxProcessRunner();
         var result = await runner.RunAsync("/bin/sh", ["-c", "exit 3"], TimeSpan.FromSeconds(5), CancellationToken.None);
 
@@ -26,6 +39,8 @@ public sealed class LinuxProcessRunnerTests
     [Fact]
     public async Task RunAsyncKillsProcessAndThrowsOperationCanceledWhenCallerTokenIsCancelled()
     {
+        if (!OperatingSystem.IsLinux()) return;
+
         var runner = new LinuxProcessRunner();
         using var cts = new CancellationTokenSource();
 
@@ -42,6 +57,8 @@ public sealed class LinuxProcessRunnerTests
     [Fact]
     public async Task ExitedNotifiesLateSubscriberForAlreadyExitedProcess()
     {
+        if (!OperatingSystem.IsLinux()) return;
+
         var runner = new LinuxProcessRunner();
         await using var process = runner.Start("/bin/true", []);
 
