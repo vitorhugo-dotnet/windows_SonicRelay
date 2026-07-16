@@ -12,6 +12,7 @@ internal sealed class FakeWebRtcPublisher : IWebRtcPublisher
     public List<WebRtcAudioFrame> PushedFrames { get; } = [];
     public WebRtcPublisherDiagnostics Diagnostics { get; } = new(0, []);
     public event Action<WebRtcPublisherDiagnostics>? DiagnosticsChanged;
+    public event Action<string>? IceRestartRequested;
 
     public Task HandleAsync(SignalingMessageEnvelope message, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
@@ -53,12 +54,12 @@ public sealed class WebRtcAudioBridgeIntegrationTests
         runner.LastStartedProcess!.Write(new byte[BytesPerFrame]);
         await startTask;
 
-        // The frame written above is consumed internally by PipeWireProcessBackend to
-        // prove pw-record produced audio before StartAsync returns (it completes the
-        // `started` signal before AudioCaptureService transitions out of "Starting"),
-        // so AudioCaptureService.OnFrameAvailable's Capturing-state check drops it by
-        // design. Write a second frame now that StartAsync has returned (State is
-        // guaranteed Capturing) so a frame actually reaches the bridge/publisher.
+        // The frame written above unblocks PipeWireProcessBackend's own `started`
+        // signal before AudioCaptureService transitions out of "Starting". That frame
+        // is still delivered to the bridge (AudioCaptureService.OnFrameAvailable now
+        // accepts frames raised during Starting/Recovering, not just Capturing), but
+        // write a second frame here too so the assertions below exercise steady-state
+        // Capturing delivery as well, not only the startup-race frame.
         runner.LastStartedProcess.Write(new byte[BytesPerFrame]);
 
         await WaitUntilAsync(() => publisher.PushedFrames.Count > 0, TimeSpan.FromSeconds(2));
