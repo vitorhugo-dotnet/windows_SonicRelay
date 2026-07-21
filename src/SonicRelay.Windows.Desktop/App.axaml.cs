@@ -40,6 +40,7 @@ public partial class App : Application
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
+                viewModel.LogDiagnostic("tray", "Tray integration unavailable; closing the window will exit normally instead of minimizing to tray.");
             }
 
             if (OperatingSystem.IsWindows())

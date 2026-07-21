@@ -41,14 +41,23 @@ public sealed class DesktopTrayController : IDisposable
             ToolTipText = controller.TooltipFor(viewModel.CurrentSnapshot),
             IsVisible = true,
         };
-        trayIcon.Clicked += (_, _) => ShowWindow();
 
+        // Register with the platform tray backend before wiring any subscriptions
+        // below: if the desktop environment has no tray support, this throws, and
+        // the constructor must leave nothing subscribed — otherwise a half-constructed
+        // instance stays alive via a dangling window.Closing/PropertyChanged handler,
+        // and a later "hide to tray" decision hides the window with no visible tray
+        // icon to bring it back (an unreachable hidden process — see
+        // docs/superpowers/specs/2026-07-14-linux-desktop-publisher-design.md,
+        // "Tray and lifecycle").
+        TrayIcon.SetIcons(Application.Current!, [trayIcon]);
+
+        trayIcon.Clicked += (_, _) => ShowWindow();
         viewModel.Changed += Refresh;
         window.Closing += OnWindowClosing;
         window.PropertyChanged += OnWindowPropertyChanged;
 
         Refresh();
-        TrayIcon.SetIcons(Application.Current!, [trayIcon]);
     }
 
     private void Refresh()
