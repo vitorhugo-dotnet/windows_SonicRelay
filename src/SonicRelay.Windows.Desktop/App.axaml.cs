@@ -2,7 +2,6 @@ using System.Runtime.Versioning;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using SonicRelay.Windows.Audio;
 using SonicRelay.Windows.Core.Configuration;
 using SonicRelay.Windows.Presentation;
 using SonicRelay.Windows.Desktop.ViewModels;
@@ -18,13 +17,12 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // On Windows the shell attaches a live publisher runtime (WASAPI capture + the
-            // configured backend) and opens on the sign-in surface until a session is restored
-            // or the user signs in. Elsewhere — Linux today, and the headless render tests — the
-            // WASAPI adapter cannot run, so the shell opens on a representative preview so the
-            // layout and design system stay verifiable. The Linux capture adapter (PipeWire) is
-            // a later phase (issue #32).
-            var viewModel = OperatingSystem.IsWindows()
+            // On Windows and Linux the shell attaches a live publisher runtime (real
+            // capture + the configured backend) and opens on the sign-in surface until
+            // a session is restored or the user signs in. Elsewhere — the headless
+            // render tests, or an unsupported OS — the shell opens on a representative
+            // preview so the layout and design system stay verifiable (issue #32).
+            var viewModel = OperatingSystem.IsWindows() || OperatingSystem.IsLinux()
                 ? new MainWindowViewModel()
                 : MainWindowViewModel.CreatePreview();
 
@@ -43,20 +41,20 @@ public partial class App : Application
                 viewModel.LogDiagnostic("tray", "Tray integration unavailable; closing the window will exit normally instead of minimizing to tray.");
             }
 
-            if (OperatingSystem.IsWindows())
+            if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
                 _ = AttachConfiguredRuntimeAsync(viewModel);
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    [SupportedOSPlatform("windows")]
     private static async Task AttachConfiguredRuntimeAsync(MainWindowViewModel viewModel)
     {
         try
         {
             var configuration = await new UserConfigurationLoader().LoadAsync();
-            var runtime = PublisherRuntime.Create(configuration.BackendBaseUrl, new AudioCaptureService());
+            var runtime = DesktopRuntimeFactory.Create(configuration.BackendBaseUrl);
+            if (runtime is null) return; // unsupported platform: stay on the sign-in surface
             viewModel.Attach(runtime);
             // Restore a persisted session (refresh + /auth/me) so a returning user lands on the
             // dashboard; a missing/expired session simply leaves the sign-in surface showing.
@@ -64,8 +62,9 @@ public partial class App : Application
         }
         catch
         {
-            // Backend unreachable or no stored session at startup: stay on the sign-in surface
-            // so the user can retry once connectivity returns.
+            // Backend unreachable, no stored session, or a missing platform capture
+            // dependency (e.g. PipeWire tools not installed) at startup: stay on the
+            // sign-in surface so the user can retry once the condition is resolved.
         }
     }
 }
