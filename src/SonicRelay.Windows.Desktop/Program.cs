@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.X11;
 
 namespace SonicRelay.Windows.Desktop;
 
@@ -16,9 +17,13 @@ internal static class Program
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
 
     // Avalonia configuration, don't remove; also used by the visual designer.
+    // The explicit X11 WmClass keeps the window manager class stable and matching
+    // packaging/linux/sonicrelay.desktop's StartupWMClass (issue #40), independent of
+    // the published executable's file name.
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .With(new X11PlatformOptions { WmClass = "sonicrelay" })
             .WithInterFont()
             .LogToTrace();
 }

@@ -19,6 +19,11 @@ jobs:
     name: Build, test, and release
     runs-on: windows-latest
     timeout-minutes: 60
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      target-sha: ${{ steps.release.outputs.target-sha }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
 
     steps:
       - name: Check out repository
@@ -212,3 +217,70 @@ jobs:
             --generate-notes `
             --notes "Build version: $version`nCommit: $targetSha`nRuntime: win-x64" `
             @extraArgs
+
+  linux-package:
+    name: Package Linux release assets
+    needs: build-test-and-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # Same commit the Windows job just built and released, so both platforms'
+          # assets come from the identical tag/commit (issue #40 acceptance criteria).
+          ref: ${{ needs.build-test-and-release.outputs.target-sha }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore Linux x64 publish dependencies
+        run: >-
+          dotnet restore src/SonicRelay.Windows.Desktop/SonicRelay.Windows.Desktop.csproj
+          --runtime linux-x64
+
+      - name: Publish self-contained Linux x64 app
+        run: >-
+          dotnet publish src/SonicRelay.Windows.Desktop/SonicRelay.Windows.Desktop.csproj
+          --configuration Release --runtime linux-x64 --self-contained true --no-restore
+          --output artifacts/publish/linux-x64
+
+      - name: Install fpm
+        run: sudo gem install --no-document fpm
+
+      - name: Build tar.gz, deb, and rpm packages
+        run: >-
+          packaging/linux/build-packages.sh
+          artifacts/publish/linux-x64
+          '${{ needs.build-test-and-release.outputs.version }}'
+          '${{ needs.build-test-and-release.outputs.target-sha }}'
+          artifacts/release
+
+      - name: Extend the release's checksums and notes with the Linux assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build-test-and-release.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.build-test-and-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          distDir=artifacts/release
+
+          # Merge into the Windows job's checksums-sha256.txt so there is one canonical
+          # checksums file per release, covering every platform's assets.
+          gh release download "$RELEASE_TAG" --pattern checksums-sha256.txt --dir "$distDir" --clobber
+          ( cd "$distDir" && sha256sum SonicRelay-LinuxPublisher-*.tar.gz SonicRelay-LinuxPublisher-*.deb SonicRelay-LinuxPublisher-*.rpm >> checksums-sha256.txt )
+
+          currentNotes=$(gh release view "$RELEASE_TAG" --json body --jq .body)
+          linuxNotes=$(printf '\n\n## Linux assets\n\n- `SonicRelay-LinuxPublisher-linux-x64-%s.tar.gz`: portable self-contained folder archive.\n- `SonicRelay-LinuxPublisher-linux-x64-%s.deb`: Debian/Ubuntu package (officially Ubuntu 24.04).\n- `SonicRelay-LinuxPublisher-linux-x64-%s.rpm`: Fedora package (best effort).\n\nSee `docs/linux-publisher.md` for installation, dependencies, and known limitations.\n' "$RELEASE_VERSION" "$RELEASE_VERSION" "$RELEASE_VERSION")
+
+          gh release edit "$RELEASE_TAG" --notes "${currentNotes}${linuxNotes}"
+
+          gh release upload "$RELEASE_TAG" \
+            "$distDir"/SonicRelay-LinuxPublisher-*.tar.gz \
+            "$distDir"/SonicRelay-LinuxPublisher-*.deb \
+            "$distDir"/SonicRelay-LinuxPublisher-*.rpm \
+            "$distDir/checksums-sha256.txt" \
+            --clobber
