@@ -21,6 +21,15 @@ $requiredPaths = @(
     'docs/architecture.md'
     'docs/non-admin-checklist.md'
     'docs/release-smoke-test.md'
+    'docs/linux-publisher.md'
+    'src/SonicRelay.Platform.Linux/SonicRelay.Platform.Linux.csproj'
+    'packaging/linux/build-packages.sh'
+    'packaging/linux/sonicrelay'
+    'packaging/linux/sonicrelay.desktop'
+    'packaging/linux/after-install.sh'
+    'packaging/linux/after-remove.sh'
+    'packaging/linux/icons/sonicrelay.svg'
+    'packaging/linux/icons/sonicrelay.png'
 )
 
 $missingPaths = $requiredPaths | Where-Object {
@@ -63,6 +72,10 @@ if ($missingGuardrails.Count -gt 0) {
 
 if ($readme -notmatch '\(docs/release-smoke-test\.md\)') {
     Write-Error 'README.md must link to docs/release-smoke-test.md.'
+}
+
+if ($readme -notmatch '\(docs/linux-publisher\.md\)') {
+    Write-Error 'README.md must link to docs/linux-publisher.md.'
 }
 
 $releaseSmokeTestPath = Join-Path $root 'docs/release-smoke-test.md'
@@ -116,6 +129,9 @@ if (Test-Path -LiteralPath $workflowPath) {
         'repository structure test' = 'tests/Repository\.Structure\.Tests\.ps1'
         'artifact upload' = 'actions/upload-artifact@v4'
         'always upload results' = 'if:\s*always\(\)'
+        'Ubuntu matrix leg' = 'ubuntu-24\.04'
+        'build-and-test matrix' = '(?m)^\s*matrix:\s*$'
+        'Linux startup smoke test' = 'xvfb-run'
     }
 
     $missingWorkflowRequirements = $requiredWorkflowPatterns.GetEnumerator() | Where-Object {
@@ -146,6 +162,12 @@ if (Test-Path -LiteralPath $releaseWorkflowPath) {
         'build metadata' = 'BUILD-INFO\.txt'
         'release creation' = 'gh release create'
         'generated release notes' = '--generate-notes'
+        'Linux packaging job' = '(?m)^\s*linux-package:\s*$'
+        'Ubuntu runner for Linux packaging' = 'runs-on:\s*ubuntu-24\.04'
+        'Linux x64 publish' = '(?s)dotnet publish src/SonicRelay\.Windows\.Desktop/SonicRelay\.Windows\.Desktop\.csproj.*?--runtime linux-x64'
+        'Linux package build script' = 'packaging/linux/build-packages\.sh'
+        'fpm packaging tool' = 'gem install --no-document fpm'
+        'checksums extended for Linux' = 'checksums-sha256\.txt'
     }
 
     $missingReleaseWorkflowRequirements = $requiredReleaseWorkflowPatterns.GetEnumerator() | Where-Object {

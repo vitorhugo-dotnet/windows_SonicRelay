@@ -108,14 +108,30 @@ the Avalonia designer and headless render tests.
 
 Not yet covered: XDG-specific config/state/cache directory layout (the existing
 `Environment.SpecialFolder.LocalApplicationData`-based paths already resolve
-correctly on Linux via .NET's BCL, so this was not blocking), user-visible
+correctly on Linux via .NET's BCL, so this was not blocking), and user-visible
 actionable startup error messaging when a Linux capture dependency is missing
 (today it silently falls back to the sign-in surface, matching existing Windows
 behavior — not a regression, but short of the design spec's "actionable platform
-error" ask), and — as before — Linux CI/packaging/distribution, tracked in a
-separate follow-up (spec PR 3, issue #40). Manual, real-desktop validation (Ubuntu
-24.04, real PipeWire session, real Secret Service, real tray) has not been
-performed in this environment and remains the release gate per the design spec.
+error" ask). Manual, real-desktop validation (Ubuntu 24.04, real PipeWire
+session, real Secret Service, real tray) has not been performed in this
+environment and remains the release gate per the design spec.
+
+### Linux CI and distribution (issue #32, PR 3 of the Linux design)
+
+`.github/workflows/ci.yml`'s `build-and-test` job runs as a required matrix
+across `windows-latest` and `ubuntu-24.04`; the Ubuntu leg additionally launches
+the actual published `linux-x64` binary under a virtual display as a startup
+smoke test. `.github/workflows/release.yml` adds a `linux-package` job that
+checks out the exact commit the Windows job just released, publishes
+self-contained `linux-x64`, and builds a portable `.tar.gz`, a `.deb`
+(Ubuntu/Debian), and a `.rpm` (Fedora, best effort) via
+[`packaging/linux/build-packages.sh`](../packaging/linux/build-packages.sh)
+using [`fpm`](https://fpm.readthedocs.io/) — sharing one FHS staging layout
+(`/usr/lib/sonicrelay`, `/usr/bin/sonicrelay`, the desktop entry, and the icon)
+across both package formats, and extending the release's single
+`checksums-sha256.txt` and notes rather than creating separate ones. See
+[`docs/linux-publisher.md`](linux-publisher.md) for installation, dependencies,
+supported systems, and known limitations.
 
 ### Interface states
 
